@@ -1,897 +1,862 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LMS Edukasi Terpadu</title>
-    
-    <!-- Tailwind CSS (Desain) -->
-    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
-    
-    <!-- React JS (Sistem Inti) -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    
-    <!-- Babel (Penerjemah Bahasa React ke Browser) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LMS Edukasi Terpadu</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel untuk JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Firebase SDK (Versi Compat 8/9 untuk kemudahan via CDN) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
 
-    <style>
-        /* Memastikan aplikasi memenuhi layar penuh */
-        html, body, #root { height: 100%; margin: 0; }
-    </style>
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+    /* Loading Spinner */
+    .loader {
+      border: 4px solid #f3f3f3; border-top: 4px solid #4f46e5;
+      border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
 </head>
-<body class="bg-slate-50 text-slate-800">
-    
-    <!-- Tempat aplikasi React akan dirender -->
-    <div id="root"></div>
+<body>
+  <div id="root"></div>
 
-    <!-- KODE APLIKASI KITA MULAI DI SINI -->
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
 
-        let katexLoadPromise = null;
-        const loadKatex = () => {
-          if (katexLoadPromise) return katexLoadPromise;
-          katexLoadPromise = (async () => {
-            if (window.renderMathInElement) return;
-            const loadScript = (id, src) => new Promise((resolve, reject) => {
-              if (document.getElementById(id)) { resolve(); return; }
-              const script = document.createElement('script');
-              script.id = id; script.src = src; script.async = true;
-              script.onload = resolve; script.onerror = reject;
-              document.head.appendChild(script);
-            });
-            const loadStyle = (id, href) => {
-              if (document.getElementById(id)) return;
-              const link = document.createElement('link');
-              link.id = id; link.rel = 'stylesheet'; link.href = href;
-              document.head.appendChild(link);
-            };
+    // KONFIGURASI FIREBASE MILIK ANDA
+    const firebaseConfig = {
+      apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
+      authDomain: "database-lms-portal.firebaseapp.com",
+      projectId: "database-lms-portal",
+      storageBucket: "database-lms-portal.firebasestorage.app",
+      messagingSenderId: "1021583607305",
+      appId: "1:1021583607305:web:80edc313d0ebca37841ad8"
+    };
 
-            loadStyle('katex-css', 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css');
-            await loadScript('katex-js', 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js');
-            await loadScript('katex-auto-render', 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js');
-          })();
-          return katexLoadPromise;
+    // Inisialisasi Firebase
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const db = firebase.firestore();
+
+    // Data Default Jika Database Kosong
+    const INITIAL_USERS = {
+      guru: { password: '123', role: 'teacher', name: 'Pak Guru Budi' },
+      siswa1: { password: '123', role: 'student', name: 'Andi (Siswa)' },
+    };
+    const INITIAL_MODULES = [
+      { id: 'm1', type: 'module', title: 'Modul Contoh', description: 'Ini adalah modul bawaan pertama.', children: [] }
+    ];
+
+    // Helper: LaTeX KaTeX loader
+    let katexLoadPromise = null;
+    const loadKatex = () => {
+      if (katexLoadPromise) return katexLoadPromise;
+      katexLoadPromise = (async () => {
+        if (window.renderMathInElement) return;
+        const loadScript = (id, src) => new Promise((resolve, reject) => {
+          if (document.getElementById(id)) { resolve(); return; }
+          const script = document.createElement('script');
+          script.id = id; script.src = src; script.async = true;
+          script.onload = resolve; script.onerror = reject;
+          document.head.appendChild(script);
+        });
+        const loadStyle = (id, href) => {
+          if (document.getElementById(id)) return;
+          const link = document.createElement('link');
+          link.id = id; link.rel = 'stylesheet'; link.href = href;
+          document.head.appendChild(link);
         };
 
-        function ContentRenderer({ text, className = "" }) {
-          const containerRef = useRef(null);
-          useEffect(() => {
-            let isMounted = true;
-            if (!text) return;
-            loadKatex().then(() => {
-              if (isMounted && window.renderMathInElement && containerRef.current) {
-                window.renderMathInElement(containerRef.current, {
-                  delimiters: [
-                    { left: '$$', right: '$$', display: true },
-                    { left: '$', right: '$', display: false },
-                    { left: '\\(', right: '\\)', display: false },
-                    { left: '\\[', right: '\\]', display: true }
-                  ],
-                  throwOnError: false
-                });
-              }
+        loadStyle('katex-css', 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css');
+        await loadScript('katex-js', 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js');
+        await loadScript('katex-auto-render', 'https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js');
+      })();
+      return katexLoadPromise;
+    };
+
+    function ContentRenderer({ text, className = "" }) {
+      const containerRef = useRef(null);
+      useEffect(() => {
+        let isMounted = true;
+        if (!text) return;
+        loadKatex().then(() => {
+          if (isMounted && window.renderMathInElement && containerRef.current) {
+            window.renderMathInElement(containerRef.current, {
+              delimiters: [
+                { left: '$$', right: '$$', display: true },
+                { left: '$', right: '$', display: false }
+              ],
+              throwOnError: false
             });
-            return () => { isMounted = false; };
-          }, [text]);
-
-          if (!text) return null;
-          // Pisahkan teks dengan format gambar markdown: ![alt](url)
-          const parts = text.split(/(!\[.*?\]\(.*?\))/g);
-          return (
-            <span ref={containerRef} className={`whitespace-pre-wrap ${className}`}>
-              {parts.map((part, index) => {
-                const imgMatch = part.match(/^!\[(.*?)\]\((.*?)\)$/);
-                if (imgMatch) {
-                  const alt = imgMatch[1];
-                  const url = imgMatch[2];
-                  return (
-                    <img key={index} src={url} alt={alt} className="max-w-full h-auto my-3 rounded-lg shadow-sm border border-slate-200 block" onError={(e) => { e.target.onerror = null; e.target.src = `https://placehold.co/600x400/f8fafc/94a3b8?text=Gambar+Gagal+Dimuat` }} />
-                  );
-                }
-                return <span key={index}>{part}</span>;
-              })}
-            </span>
-          );
-        }
-
-        const INITIAL_USERS = {
-          guru: { password: '123', role: 'teacher', name: 'Pak Guru Budi' },
-          siswa1: { password: '123', role: 'student', name: 'Andi (Siswa)' },
-        };
-
-        const INITIAL_MODULES = [
-          {
-            id: 'm1', type: 'module', title: 'Modul 1: Pengantar Sains', description: 'Pelajari dasar-dasar sains di sini.', children: [
-              { id: 'm1-f1', type: 'folder', title: 'Bab 1: Fisika Dasar', children: [
-                { id: 'm1-f1-t1', type: 'text', title: 'Hukum Newton', content: 'Hukum Newton II: $F = m \\times a$. \n\nBerikut ilustrasinya:\n![Ilustrasi Gaya](https://images.unsplash.com/photo-1636819488524-1f019c4e1c44?auto=format&fit=crop&w=400&q=80)' },
-                { id: 'm1-f1-v1', type: 'youtube', title: 'Video Penjelasan', url: 'https://www.youtube.com/watch?v=kKKM8Y-u7ds' }
-              ]},
-              { id: 'm1-q1', type: 'quiz', title: 'Kuis Modul 1', questions: [
-                { id: 'q1', type: 'multiple_choice', text: 'Siapakah penemu Teori Relativitas ($E=mc^2$)?', options: [{ id: 'o1', text: 'Newton', isCorrect: false }, { id: 'o2', text: 'Einstein', isCorrect: true }] },
-                { id: 'q2', type: 'true_false', text: 'Bumi berputar mengelilingi matahari.', isTrue: true },
-                { id: 'q3', type: 'essay', text: 'Jelaskan secara singkat apa itu gaya gravitasi.', keyword: 'tarik|bumi|massa' },
-                { id: 'q4', type: 'matching', text: 'Pasangkan penemu dengan teorinya!', pairs: [{id:'p1', left:'Isaac Newton', right:'Hukum Gravitasi'}, {id:'p2', left:'Albert Einstein', right:'Relativitas'}] }
-              ]}
-            ]
           }
-        ];
+        });
+        return () => { isMounted = false; };
+      }, [text]);
 
-        const Icons = {
-          Book: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>,
-          Folder: () => <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>,
-          Text: () => <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
-          Video: () => <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-          Quiz: () => <svg className="w-4 h-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>,
-          File: () => <svg className="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>,
-          Plus: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
-          Lock: () => <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
-          Unlock: () => <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>,
-          Trash: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
-          Image: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
-          Users: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-        };
+      if (!text) return null;
+      const parts = text.split(/(!\[.*?\]\(.*?\))/g);
+      return (
+        <span ref={containerRef} className={`whitespace-pre-wrap ${className}`}>
+          {parts.map((part, index) => {
+            const imgMatch = part.match(/^!\[(.*?)\]\((.*?)\)$/);
+            if (imgMatch) {
+              const alt = imgMatch[1];
+              const url = imgMatch[2];
+              return (
+                <img key={index} src={url} alt={alt} className="max-w-full h-auto my-3 rounded-lg shadow-sm border border-slate-200 block" onError={(e) => { e.target.onerror = null; e.target.src = `https://placehold.co/600x400/f8fafc/94a3b8?text=Gambar+Gagal+Dimuat` }} />
+              );
+            }
+            return <span key={index}>{part}</span>;
+          })}
+        </span>
+      );
+    }
 
-        const generateId = () => Math.random().toString(36).substr(2, 9);
-        const getYoutubeId = (url) => { const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/; const match = url.match(regExp); return (match && match[2].length === 11) ? match[2] : null; };
-        
-        const getSequentialNodes = (nodes) => {
-          let list = [];
-          nodes.forEach(node => {
-            if (node.type === 'folder' || node.type === 'module') {
-              list = list.concat(getSequentialNodes(node.children || []));
-            } else { list.push(node); }
+    const Icons = {
+      Book: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>,
+      Folder: () => <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>,
+      Text: () => <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
+      Video: () => <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+      Quiz: () => <svg className="w-4 h-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>,
+      File: () => <svg className="w-4 h-4 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>,
+      Plus: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>,
+      Lock: () => <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>,
+      Unlock: () => <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>,
+      Trash: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
+      Image: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
+      Users: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+    };
+
+    const generateId = () => Math.random().toString(36).substr(2, 9);
+    const getYoutubeId = (url) => { const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/; const match = url.match(regExp); return (match && match[2].length === 11) ? match[2] : null; };
+    const getSequentialNodes = (nodes) => {
+      let list = [];
+      nodes.forEach(node => {
+        if (node.type === 'folder' || node.type === 'module') {
+          list = list.concat(getSequentialNodes(node.children || []));
+        } else { list.push(node); }
+      });
+      return list;
+    };
+
+    function LMSApp() {
+      const [isLoading, setIsLoading] = useState(true);
+      const [users, setUsers] = useState({});
+      const [currentUser, setCurrentUser] = useState(null);
+      const [modules, setModules] = useState([]);
+      const [studentProgress, setStudentProgress] = useState({});
+
+      // Tarik Data Realtime (Otomatis Refresh)
+      useEffect(() => {
+        const docRef = db.collection('lms_data').doc('core');
+        const unsubscribe = docRef.onSnapshot((doc) => {
+          if (doc.exists) {
+            setUsers(doc.data().users || INITIAL_USERS);
+            setModules(doc.data().modules || INITIAL_MODULES);
+          } else {
+            docRef.set({ users: INITIAL_USERS, modules: INITIAL_MODULES });
+          }
+          setIsLoading(false);
+        }, (error) => {
+          console.error("Gagal terhubung:", error);
+          alert("Gagal membaca Database! Pastikan Rules diset ke 'Start in test mode'.");
+          setIsLoading(false);
+        });
+        return () => unsubscribe();
+      }, []);
+
+      // Tarik Nilai Siswa
+      useEffect(() => {
+        if (currentUser && currentUser.role === 'student') {
+          const pRef = db.collection('lms_data').doc(`progress_${currentUser.username}`);
+          pRef.get().then(doc => {
+            if (doc.exists) setStudentProgress(doc.data());
+            else setStudentProgress({});
           });
-          return list;
-        };
-
-        function LMSApp() {
-          const [users, setUsers] = useState(INITIAL_USERS);
-          const [currentUser, setCurrentUser] = useState(null);
-          const [modules, setModules] = useState(INITIAL_MODULES);
-          const [studentProgress, setStudentProgress] = useState({});
-
-          if (!currentUser) return <LoginScreen users={users} onLogin={setCurrentUser} />;
-
-          return (
-            <div className="h-full bg-slate-50 text-slate-800 font-sans flex flex-col">
-              <header className="bg-white shadow-sm border-b border-slate-200 px-6 py-4 flex justify-between items-center shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="bg-indigo-600 text-white p-2 rounded-lg"><Icons.Book /></div>
-                  <h1 className="text-xl font-bold text-slate-800">LMS Edukasi Terpadu</h1>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-sm">
-                    <span className="text-slate-500 block text-right text-xs uppercase tracking-wider">{currentUser.role === 'teacher' ? 'Panel Guru' : 'Panel Siswa'}</span>
-                    <span className="font-semibold text-slate-800">{currentUser.name}</span>
-                  </div>
-                  <button onClick={() => setCurrentUser(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition">Keluar</button>
-                </div>
-              </header>
-
-              {currentUser.role === 'teacher' ? (
-                <TeacherDashboard modules={modules} setModules={setModules} users={users} setUsers={setUsers} />
-              ) : (
-                <StudentDashboard modules={modules} progress={studentProgress} setProgress={setStudentProgress} />
-              )}
-            </div>
-          );
         }
+      }, [currentUser]);
 
-        function LoginScreen({ users, onLogin }) {
-          const [username, setUsername] = useState('');
-          const [password, setPassword] = useState('');
-          const [error, setError] = useState('');
+      // Penyimpan Data ke Database
+      const handleSetModules = (newModulesOrFunc) => {
+        setModules(prev => {
+          const updatedModules = typeof newModulesOrFunc === 'function' ? newModulesOrFunc(prev) : newModulesOrFunc;
+          db.collection('lms_data').doc('core').set({ modules: updatedModules }, { merge: true });
+          return updatedModules;
+        });
+      };
 
-          const handleLogin = (e) => {
-            e.preventDefault();
-            const user = users[username];
-            if (user && user.password === password) onLogin({ username, ...user });
-            else setError('Username atau password salah!');
-          };
+      const handleSetUsers = (newUsersOrFunc) => {
+        setUsers(prev => {
+          const updatedUsers = typeof newUsersOrFunc === 'function' ? newUsersOrFunc(prev) : newUsersOrFunc;
+          db.collection('lms_data').doc('core').set({ users: updatedUsers }, { merge: true });
+          return updatedUsers;
+        });
+      };
 
-          return (
-            <div className="h-full flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100 p-4">
-              <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-white/50">
-                <div className="text-center mb-8">
-                  <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-200">
-                    <Icons.Book />
-                  </div>
-                  <h2 className="text-2xl font-bold text-slate-800">Selamat Datang di LMS</h2>
-                  <p className="text-slate-500 mt-2">Silakan masuk untuk melanjutkan pembelajaran.</p>
-                </div>
-                {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-6 text-sm text-center font-medium border border-red-100">{error}</div>}
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
-                    <input type="text" className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" value={username} onChange={e => setUsername(e.target.value)} required placeholder="Masukkan username" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-                    <input type="password" className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Masukkan password" />
-                  </div>
-                  <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition shadow-lg shadow-indigo-200">Masuk</button>
-                </form>
-                <div className="mt-6 text-center text-xs text-slate-400">
-                  <p>Demo Akun:</p>
-                  <p>Guru: <b>guru</b> / 123 | Siswa: <b>siswa1</b> / 123</p>
-                </div>
-              </div>
-            </div>
-          );
-        }
-
-        function TeacherDashboard({ modules, setModules, users, setUsers }) {
-          const [activeTab, setActiveTab] = useState('modules');
-          const [selectedNodeId, setSelectedNodeId] = useState(null);
-
-          const findNode = (nodes, id) => {
-            for (let node of nodes) {
-              if (node.id === id) return node;
-              if (node.children) {
-                const found = findNode(node.children, id);
-                if (found) return found;
-              }
-            }
-            return null;
-          };
-
-          const updateNode = (id, newProps) => {
-            const updateRecursive = (nodes) => nodes.map(node => {
-              if (node.id === id) return { ...node, ...newProps };
-              if (node.children) return { ...node, children: updateRecursive(node.children) };
-              return node;
-            });
-            setModules(updateRecursive(modules));
-          };
-
-          const deleteNode = (id) => {
-            const filterRecursive = (nodes) => nodes.filter(node => node.id !== id).map(node => {
-              if (node.children) return { ...node, children: filterRecursive(node.children) };
-              return node;
-            });
-            setModules(filterRecursive(modules));
-            if (selectedNodeId === id) setSelectedNodeId(null);
-          };
-
-          const handleImageUpload = (nodeId, currentContent) => {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = 'image/*';
-            input.onchange = (e) => {
-              const file = e.target.files[0];
-              if (file) {
-                if (file.size > 5 * 1024 * 1024) {
-                  alert('Maaf, ukuran gambar terlalu besar. Maksimal 5MB.');
-                  return;
-                }
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                  const base64Data = event.target.result;
-                  updateNode(nodeId, { content: (currentContent || '') + `\n![Gambar](${base64Data})\n` });
-                };
-                reader.readAsDataURL(file);
-              }
-            };
-            input.click(); 
-          };
-
-          const selectedNode = selectedNodeId ? findNode(modules, selectedNodeId) : null;
-
-          return (
-            <div className="flex-1 flex flex-col min-h-0">
-              <div className="bg-white border-b border-slate-200 px-6 flex gap-4 shrink-0">
-                <button className={`py-3 px-4 font-medium border-b-2 transition ${activeTab === 'modules' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('modules')}>📚 Kelola Modul</button>
-                <button className={`py-3 px-4 font-medium border-b-2 transition ${activeTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('users')}>👥 Manajemen Akun</button>
-              </div>
-
-              {/* Layout Flexbox Side-by-side md:flex-row */}
-              <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-                {activeTab === 'modules' ? (
-                  <>
-                    <div className="w-full md:w-80 bg-slate-50 border-r border-slate-200 flex flex-col shrink-0">
-                      <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white">
-                        <h2 className="font-semibold text-slate-700">Daftar Modul</h2>
-                        <button onClick={() => {
-                          const newMod = { id: generateId(), type: 'module', title: 'Modul Baru', description: '', children: [] };
-                          setModules([...modules, newMod]);
-                          setSelectedNodeId(newMod.id);
-                        }} className="text-sm bg-indigo-50 text-indigo-600 p-2 rounded hover:bg-indigo-100" title="Tambah Modul">
-                          <Icons.Plus />
-                        </button>
-                      </div>
-                      <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                        {modules.map(mod => (
-                          <TeacherSidebarNode key={mod.id} node={mod} selectedId={selectedNodeId} onSelect={setSelectedNodeId} onUpdate={updateNode} onDelete={deleteNode} depth={0} />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto bg-white p-6 md:p-8 min-w-0">
-                      {selectedNode ? (
-                        <div className="max-w-4xl mx-auto pb-20">
-                          <div className="flex justify-between items-start mb-6">
-                            <h2 className="text-2xl font-bold text-slate-800">Editor {selectedNode.type === 'module' ? 'Modul' : selectedNode.type === 'folder' ? 'Folder/Bab' : 'Materi'}</h2>
-                            <button onClick={() => { if(confirm('Hapus item ini?')) deleteNode(selectedNode.id); }} className="text-red-500 hover:bg-red-50 p-2 rounded">
-                              <Icons.Trash />
-                            </button>
-                          </div>
-                          
-                          <div className="space-y-6">
-                            <div>
-                              <label className="block text-sm font-medium text-slate-700 mb-1">Judul</label>
-                              <input type="text" className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500" value={selectedNode.title} onChange={e => updateNode(selectedNode.id, { title: e.target.value })} />
-                            </div>
-
-                            {(selectedNode.type === 'module' || selectedNode.type === 'folder') && (
-                              <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">Deskripsi</label>
-                                <textarea className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 h-24" value={selectedNode.description || ''} onChange={e => updateNode(selectedNode.id, { description: e.target.value })} />
-                                
-                                <div className="mt-8 border-t border-slate-200 pt-6">
-                                  <h3 className="font-semibold text-slate-800 mb-4">Tambahkan Isi ke dalam {selectedNode.type === 'module' ? 'Modul' : 'Folder'} ini:</h3>
-                                  <div className="flex flex-wrap gap-2">
-                                    <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'folder', title: 'Sub-Folder Baru', children: [] }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm transition"><Icons.Folder /> + Folder</button>
-                                    <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'text', title: 'Materi Teks Baru', content: '' }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-sm transition"><Icons.Text /> + Teks</button>
-                                    <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'youtube', title: 'Video Baru', url: '' }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-sm transition"><Icons.Video /> + YouTube</button>
-                                    <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'file', title: 'File Baru', url: '' }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-lg text-sm transition"><Icons.File /> + Dokumen</button>
-                                    <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'quiz', title: 'Kuis Baru', questions: [] }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-sm transition"><Icons.Quiz /> + Kuis</button>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-
-                            {selectedNode.type === 'text' && (
-                              <div>
-                                <div className="flex justify-between items-end mb-1">
-                                  <label className="block text-sm font-medium text-slate-700">Konten Teks (Mendukung Markdown & LaTeX `$$` atau `$`)</label>
-                                  <button onClick={() => handleImageUpload(selectedNode.id, selectedNode.content)} className="text-xs flex items-center gap-1 text-indigo-600 bg-indigo-50 px-2 py-1 rounded hover:bg-indigo-100">
-                                    <Icons.Image /> Ambil Gambar dari Komputer
-                                  </button>
-                                </div>
-                                <textarea className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono text-sm min-h-[300px]" value={selectedNode.content || ''} onChange={e => updateNode(selectedNode.id, { content: e.target.value })} placeholder="Ketik materi di sini... Gunakan $rumus$ untuk matematika." />
-                                <div className="mt-4 p-4 border border-slate-200 rounded-lg bg-slate-50">
-                                  <h4 className="text-sm font-semibold text-slate-500 mb-2">Preview:</h4>
-                                  <ContentRenderer text={selectedNode.content} className="text-slate-800" />
-                                </div>
-                              </div>
-                            )}
-
-                            {(selectedNode.type === 'youtube' || selectedNode.type === 'file') && (
-                              <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">URL / Link</label>
-                                <input type="url" className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 mb-4" value={selectedNode.url || ''} onChange={e => updateNode(selectedNode.id, { url: e.target.value })} placeholder={selectedNode.type === 'youtube' ? 'https://youtube.com/watch?v=...' : 'https://drive.google.com/...'} />
-                                {selectedNode.type === 'youtube' && selectedNode.url && getYoutubeId(selectedNode.url) && (
-                                   <iframe className="w-full aspect-video rounded-lg shadow-sm" src={`https://www.youtube.com/embed/${getYoutubeId(selectedNode.url)}`} allowFullScreen></iframe>
-                                )}
-                              </div>
-                            )}
-
-                            {selectedNode.type === 'quiz' && (
-                              <QuizEditor quizNode={selectedNode} updateNode={updateNode} />
-                            )}
-
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                          <Icons.Book />
-                          <p className="mt-4">Pilih atau buat modul di menu samping untuk mengedit.</p>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                ) : (
-                  <TeacherAccountManager users={users} setUsers={setUsers} />
-                )}
-              </div>
-            </div>
-          );
-        }
-
-        function TeacherSidebarNode({ node, selectedId, onSelect, onUpdate, onDelete, depth }) {
-          const [isExpanded, setIsExpanded] = useState(true);
-          const isSelected = selectedId === node.id;
-          const hasChildren = node.children && node.children.length > 0;
-
-          const getIcon = () => {
-            switch (node.type) {
-              case 'module': return <Icons.Book />;
-              case 'folder': return <Icons.Folder />;
-              case 'text': return <Icons.Text />;
-              case 'youtube': return <Icons.Video />;
-              case 'file': return <Icons.File />;
-              case 'quiz': return <Icons.Quiz />;
-              default: return <Icons.File />;
-            }
-          };
-
-          return (
-            <div className="select-none">
-              <div 
-                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition ${isSelected ? 'bg-indigo-100 text-indigo-700 font-medium' : 'hover:bg-slate-100 text-slate-600'}`}
-                style={{ paddingLeft: `${(depth * 1) + 0.5}rem` }}
-                onClick={() => onSelect(node.id)}
-              >
-                <div onClick={(e) => { if(hasChildren) { e.stopPropagation(); setIsExpanded(!isExpanded); } }}>
-                   {hasChildren ? (
-                     <span className="w-4 h-4 inline-flex items-center justify-center text-xs text-slate-400 font-bold">{isExpanded ? '▼' : '▶'}</span>
-                   ) : <span className="w-4 h-4 inline-block"></span>}
-                </div>
-                <div className="shrink-0">{getIcon()}</div>
-                <span className="truncate text-sm flex-1">{node.title}</span>
-              </div>
-              {isExpanded && node.children && (
-                <div className="mt-1">
-                  {node.children.map(child => (
-                    <TeacherSidebarNode key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} onUpdate={onUpdate} onDelete={onDelete} depth={depth + 1} />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        }
-
-        function TeacherAccountManager({ users, setUsers }) {
-          const [newUname, setNewUname] = useState('');
-          const [newPass, setNewPass] = useState('');
-          const [newName, setNewName] = useState('');
-
-          const handleAdd = (e) => {
-            e.preventDefault();
-            if(users[newUname]) return alert('Username sudah ada!');
-            setUsers({ ...users, [newUname]: { password: newPass, name: newName, role: 'student' } });
-            setNewUname(''); setNewPass(''); setNewName('');
-          };
-
-          return (
-            <div className="p-8 w-full max-w-4xl mx-auto flex-1 overflow-y-auto">
-              <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Icons.Users /> Manajemen Akun Siswa</h2>
-              <div className="grid md:grid-cols-2 gap-8">
-                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                  <h3 className="font-semibold text-slate-700 mb-4 border-b pb-2">Tambah Siswa Baru</h3>
-                  <form onSubmit={handleAdd} className="space-y-4">
-                    <div><label className="block text-sm mb-1 text-slate-600">Nama Lengkap</label><input required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newName} onChange={e=>setNewName(e.target.value)}/></div>
-                    <div><label className="block text-sm mb-1 text-slate-600">Username</label><input required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newUname} onChange={e=>setNewUname(e.target.value.toLowerCase().replace(/\s/g,''))}/></div>
-                    <div><label className="block text-sm mb-1 text-slate-600">Password</label><input required type="text" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newPass} onChange={e=>setNewPass(e.target.value)}/></div>
-                    <button className="w-full bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700">Buat Akun</button>
-                  </form>
-                </div>
-                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit max-h-[500px] overflow-y-auto">
-                  <h3 className="font-semibold text-slate-700 mb-4 border-b pb-2">Daftar Akun Sistem</h3>
-                  <ul className="space-y-3">
-                    {Object.entries(users).map(([uname, data]) => (
-                      <li key={uname} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                        <div>
-                          <div className="font-medium text-slate-800">{data.name} <span className="text-xs bg-slate-200 px-2 py-0.5 rounded ml-1">{data.role}</span></div>
-                          <div className="text-sm text-slate-500">User: <code className="text-indigo-600">{uname}</code> | Pass: <code className="text-red-500">{data.password}</code></div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          );
-        }
-
-        function QuizEditor({ quizNode, updateNode }) {
-          const addQuestion = (type) => {
-            const q = { id: generateId(), type, text: 'Pertanyaan baru?' };
-            if (type === 'multiple_choice') q.options = [{ id: generateId(), text: 'Opsi 1', isCorrect: true }, { id: generateId(), text: 'Opsi 2', isCorrect: false }];
-            else if (type === 'true_false') q.isTrue = true;
-            else if (type === 'essay') q.keyword = '';
-            else if (type === 'matching') q.pairs = [{ id: generateId(), left: 'Kiri 1', right: 'Kanan 1' }];
-            updateNode(quizNode.id, { questions: [...(quizNode.questions||[]), q] });
-          };
-
-          const updateQ = (qId, newProps) => updateNode(quizNode.id, { questions: quizNode.questions.map(q => q.id === qId ? { ...q, ...newProps } : q) });
-          const deleteQ = (qId) => updateNode(quizNode.id, { questions: quizNode.questions.filter(q => q.id !== qId) });
-
-          const handleImageUploadQuiz = (qId, currentText) => {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = 'image/*';
-            input.onchange = (e) => {
-              const file = e.target.files[0];
-              if (file) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                  const base64Data = event.target.result;
-                  updateQ(qId, { text: (currentText || '') + `\n![Gambar](${base64Data})\n` });
-                };
-                reader.readAsDataURL(file);
-              }
-            };
-            input.click(); 
-          };
-
-          return (
-            <div className="mt-8 border-t border-slate-200 pt-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-semibold text-slate-800">Daftar Soal</h3>
-                <div className="flex gap-2 flex-wrap">
-                  <button onClick={() => addQuestion('multiple_choice')} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg font-medium hover:bg-purple-200">+ Pilihan Ganda</button>
-                  <button onClick={() => addQuestion('true_false')} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg font-medium hover:bg-purple-200">+ Benar/Salah</button>
-                  <button onClick={() => addQuestion('essay')} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg font-medium hover:bg-purple-200">+ Esai</button>
-                  <button onClick={() => addQuestion('matching')} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg font-medium hover:bg-purple-200">+ Menjodohkan</button>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                {(quizNode.questions || []).map((q, i) => (
-                  <div key={q.id} className="p-5 border border-slate-200 rounded-xl bg-slate-50 shadow-sm relative">
-                    <button onClick={() => deleteQ(q.id)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500"><Icons.Trash /></button>
-                    <div className="flex justify-between items-center mb-2">
-                       <div className="flex gap-2 items-center text-sm font-bold text-slate-500">Soal {i+1} <span className="bg-slate-200 px-2 py-0.5 rounded font-normal text-xs">{q.type}</span></div>
-                       <button onClick={() => handleImageUploadQuiz(q.id, q.text)} className="text-xs flex items-center gap-1 text-indigo-600 hover:underline"><Icons.Image/> Sisip Gambar</button>
-                    </div>
-                    
-                    <textarea className="w-full p-3 border border-slate-300 rounded-lg mb-4 text-sm" value={q.text} onChange={e => updateQ(q.id, { text: e.target.value })} placeholder="Ketik pertanyaan... (Bisa pakai $rumus$ atau ![Gambar](url))" rows="2"/>
-                    
-                    {q.type === 'multiple_choice' && (
-                      <div className="space-y-2">
-                        {q.options.map((opt, oIdx) => (
-                          <div key={opt.id} className="flex gap-2 items-center">
-                            <input type="radio" checked={opt.isCorrect} onChange={() => updateQ(q.id, { options: q.options.map(o => ({...o, isCorrect: o.id === opt.id})) })} className="w-4 h-4 text-indigo-600" />
-                            <input type="text" value={opt.text} onChange={e => updateQ(q.id, { options: q.options.map(o => o.id === opt.id ? {...o, text: e.target.value} : o) })} className="flex-1 p-2 border border-slate-300 rounded-lg text-sm" />
-                            <button onClick={() => updateQ(q.id, { options: q.options.filter(o => o.id !== opt.id) })} className="text-red-400 hover:text-red-600 text-xl">&times;</button>
-                          </div>
-                        ))}
-                        <button onClick={() => updateQ(q.id, { options: [...q.options, { id: generateId(), text: 'Opsi Baru', isCorrect: false }] })} className="text-sm text-indigo-600 mt-2 hover:underline">+ Tambah Opsi</button>
-                      </div>
-                    )}
-
-                    {q.type === 'true_false' && (
-                      <div className="flex gap-4">
-                        <label className="flex items-center gap-2"><input type="radio" checked={q.isTrue} onChange={()=>updateQ(q.id, {isTrue:true})} className="text-indigo-600" /> Benar</label>
-                        <label className="flex items-center gap-2"><input type="radio" checked={!q.isTrue} onChange={()=>updateQ(q.id, {isTrue:false})} className="text-indigo-600" /> Salah</label>
-                      </div>
-                    )}
-
-                    {q.type === 'essay' && (
-                      <div>
-                        <label className="block text-xs text-slate-500 mb-1">Kata Kunci (Pisahkan dengan | untuk auto-grading opsional)</label>
-                        <input type="text" className="w-full p-2 border border-slate-300 rounded-lg text-sm" value={q.keyword} onChange={e=>updateQ(q.id, {keyword: e.target.value})} placeholder="contoh: gaya|tarikan|dorongan" />
-                      </div>
-                    )}
-
-                    {q.type === 'matching' && (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-500 text-center mb-1"><div>Premis (Kiri)</div><div>Jawaban (Kanan)</div></div>
-                        {q.pairs.map((pair) => (
-                          <div key={pair.id} className="flex gap-2 items-center">
-                            <input type="text" value={pair.left} onChange={e => updateQ(q.id, { pairs: q.pairs.map(p => p.id === pair.id ? {...p, left: e.target.value} : p) })} className="flex-1 p-2 border border-slate-300 rounded-lg text-sm" />
-                            <input type="text" value={pair.right} onChange={e => updateQ(q.id, { pairs: q.pairs.map(p => p.id === pair.id ? {...p, right: e.target.value} : p) })} className="flex-1 p-2 border border-slate-300 rounded-lg text-sm bg-green-50" />
-                            <button onClick={() => updateQ(q.id, { pairs: q.pairs.filter(p => p.id !== pair.id) })} className="text-red-400 hover:text-red-600 text-xl">&times;</button>
-                          </div>
-                        ))}
-                        <button onClick={() => updateQ(q.id, { pairs: [...q.pairs, { id: generateId(), left: 'Kiri', right: 'Kanan' }] })} className="text-sm text-indigo-600 mt-2 hover:underline">+ Tambah Pasangan</button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {(!quizNode.questions || quizNode.questions.length === 0) && <p className="text-sm text-slate-500 italic">Belum ada soal. Klik tombol di atas untuk menambah.</p>}
-              </div>
-            </div>
-          );
-        }
-
-        function StudentDashboard({ modules, progress, setProgress }) {
-          const [selectedNodeId, setSelectedNodeId] = useState(null);
-          
-          const sequentialNodes = getSequentialNodes(modules).filter(n => n.type !== 'module' && n.type !== 'folder');
-          
-          const unlockedIds = new Set();
-          let allPreviousCompleted = true;
-          for (let node of sequentialNodes) {
-            if (allPreviousCompleted) {
-              unlockedIds.add(node.id);
-              if (!progress[node.id]?.completed) allPreviousCompleted = false;
-            }
+      const handleSetProgress = (newProgressOrFunc) => {
+        setStudentProgress(prev => {
+          const updatedProgress = typeof newProgressOrFunc === 'function' ? newProgressOrFunc(prev) : newProgressOrFunc;
+          if (currentUser && currentUser.role === 'student') {
+            db.collection('lms_data').doc(`progress_${currentUser.username}`).set(updatedProgress);
           }
+          return updatedProgress;
+        });
+      };
 
-          useEffect(() => {
-            if (!selectedNodeId && sequentialNodes.length > 0) {
-              const firstIncomplete = sequentialNodes.find(n => !progress[n.id]?.completed);
-              if (firstIncomplete && unlockedIds.has(firstIncomplete.id)) setSelectedNodeId(firstIncomplete.id);
-              else if (sequentialNodes.length > 0) setSelectedNodeId(sequentialNodes[0].id);
-            }
-          }, [modules]);
+      if (isLoading) {
+        return <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50"><div className="loader mb-4"></div><p className="text-slate-500 font-medium">Memuat Data Server...</p></div>;
+      }
 
-          const findNode = (nodes, id) => {
-            for (let node of nodes) {
-              if (node.id === id) return node;
-              if (node.children) { const found = findNode(node.children, id); if (found) return found; }
-            }
-            return null;
-          };
-          const activeNode = selectedNodeId ? findNode(modules, selectedNodeId) : null;
-          const isLocked = activeNode ? !unlockedIds.has(activeNode.id) : true;
+      if (!currentUser) return <LoginScreen users={users} onLogin={setCurrentUser} />;
 
-          const markComplete = (id, score = null) => {
-            setProgress(prev => ({ ...prev, [id]: { completed: true, score } }));
-          };
+      return (
+        <div className="min-h-screen bg-slate-50 text-slate-800 font-sans flex flex-col h-screen overflow-hidden">
+          <header className="bg-white shadow-sm border-b border-slate-200 px-6 py-4 flex justify-between items-center shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="bg-indigo-600 text-white p-2 rounded-lg"><Icons.Book /></div>
+              <h1 className="text-xl font-bold text-slate-800">LMS Edukasi Terpadu</h1>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-sm">
+                <span className="text-slate-500 block text-right text-xs uppercase tracking-wider">{currentUser.role === 'teacher' ? 'Panel Guru' : 'Panel Siswa'}</span>
+                <span className="font-semibold text-slate-800">{currentUser.name}</span>
+              </div>
+              <button onClick={() => setCurrentUser(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition">Keluar</button>
+            </div>
+          </header>
 
-          return (
-            <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-              <div className="w-full md:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0">
-                <div className="p-4 bg-indigo-50 border-b border-indigo-100 flex-shrink-0">
-                  <h2 className="font-bold text-indigo-800">Materi Pembelajaran</h2>
-                  <div className="mt-2 bg-white rounded-full h-2 overflow-hidden border border-indigo-100">
-                    <div className="bg-indigo-500 h-full transition-all" style={{ width: `${sequentialNodes.length ? (Object.values(progress).filter(p=>p.completed).length / sequentialNodes.length) * 100 : 0}%` }}></div>
+          {currentUser.role === 'teacher' ? (
+            <TeacherDashboard modules={modules} setModules={handleSetModules} users={users} setUsers={handleSetUsers} />
+          ) : (
+            <StudentDashboard modules={modules} progress={studentProgress} setProgress={handleSetProgress} />
+          )}
+        </div>
+      );
+    }
+
+    function LoginScreen({ users, onLogin }) {
+      const [username, setUsername] = useState('');
+      const [password, setPassword] = useState('');
+      const [error, setError] = useState('');
+
+      const handleLogin = (e) => {
+        e.preventDefault();
+        // PERBAIKAN: Hilangkan spasi dan jadikan huruf kecil agar tidak gagal saat diketik dari HP
+        const cleanUsername = username.toLowerCase().trim().replace(/\s/g, '');
+        const user = users[cleanUsername];
+        
+        if (user && user.password === password) onLogin({ username: cleanUsername, ...user });
+        else setError('Username atau password salah! Pastikan ketikan sudah benar.');
+      };
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-100 p-4">
+          <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-white/50">
+            <div className="text-center mb-8">
+              <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-200">
+                <Icons.Book />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-800">Selamat Datang di LMS</h2>
+              <p className="text-slate-500 mt-2">Silakan masuk untuk melanjutkan.</p>
+            </div>
+            {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-6 text-sm text-center font-medium border border-red-100">{error}</div>}
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+                <input type="text" className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" value={username} onChange={e => setUsername(e.target.value)} required placeholder="Contoh: andi" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+                <input type="password" className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" value={password} onChange={e => setPassword(e.target.value)} required placeholder="Masukkan password" />
+              </div>
+              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition shadow-lg shadow-indigo-200">Masuk</button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    function TeacherDashboard({ modules, setModules, users, setUsers }) {
+      const [activeTab, setActiveTab] = useState('modules');
+      const [selectedNodeId, setSelectedNodeId] = useState(null);
+
+      const findNode = (nodes, id) => {
+        for (let node of nodes) {
+          if (node.id === id) return node;
+          if (node.children) { const found = findNode(node.children, id); if (found) return found; }
+        }
+        return null;
+      };
+
+      const updateNode = (id, newProps) => {
+        const updateRecursive = (nodes) => nodes.map(node => {
+          if (node.id === id) return { ...node, ...newProps };
+          if (node.children) return { ...node, children: updateRecursive(node.children) };
+          return node;
+        });
+        setModules(updateRecursive(modules));
+      };
+
+      const deleteNode = (id) => {
+        const filterRecursive = (nodes) => nodes.filter(node => node.id !== id).map(node => {
+          if (node.children) return { ...node, children: filterRecursive(node.children) };
+          return node;
+        });
+        setModules(filterRecursive(modules));
+        if (selectedNodeId === id) setSelectedNodeId(null);
+      };
+
+      const selectedNode = selectedNodeId ? findNode(modules, selectedNodeId) : null;
+
+      return (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="bg-white border-b border-slate-200 px-6 flex gap-4 shrink-0 overflow-x-auto">
+            <button className={`py-3 px-4 font-medium border-b-2 transition whitespace-nowrap ${activeTab === 'modules' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('modules')}>📚 Kelola Modul Pembelajaran</button>
+            <button className={`py-3 px-4 font-medium border-b-2 transition whitespace-nowrap ${activeTab === 'users' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`} onClick={() => setActiveTab('users')}>👥 Manajemen Akun Siswa</button>
+          </div>
+
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+            {activeTab === 'modules' ? (
+              <>
+                <div className="w-full md:w-80 bg-slate-50 border-r border-slate-200 flex flex-col shrink-0 md:h-full h-1/3 min-h-[250px]">
+                  <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white shrink-0">
+                    <h2 className="font-semibold text-slate-700">Daftar Modul</h2>
+                    <button onClick={() => {
+                      const newMod = { id: generateId(), type: 'module', title: 'Modul Baru', description: '', children: [] };
+                      setModules([...modules, newMod]);
+                      setSelectedNodeId(newMod.id);
+                    }} className="text-sm bg-indigo-50 text-indigo-600 p-2 rounded hover:bg-indigo-100" title="Tambah Modul"><Icons.Plus /></button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                    {modules.map(mod => <TeacherSidebarNode key={mod.id} node={mod} selectedId={selectedNodeId} onSelect={setSelectedNodeId} depth={0} />)}
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-1">
-                  {modules.map(mod => (
-                     <StudentSidebarNode key={mod.id} node={mod} selectedId={selectedNodeId} onSelect={setSelectedNodeId} unlockedIds={unlockedIds} progress={progress} depth={0} />
-                  ))}
-                </div>
-              </div>
 
-              <div className="flex-1 bg-slate-50 overflow-y-auto min-w-0 flex flex-col">
-                {activeNode && (
-                  <div className="max-w-4xl mx-auto w-full p-6 md:p-10 flex-1">
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-full">
-                      <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                        <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
-                          {isLocked && <Icons.Lock />} {activeNode.title}
-                        </h2>
-                        {progress[activeNode.id]?.completed && <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1"><Icons.Unlock/> Selesai</span>}
+                <div className="flex-1 overflow-y-auto bg-white p-6 md:p-8">
+                  {selectedNode ? (
+                    <div className="max-w-4xl mx-auto pb-20">
+                      <div className="flex justify-between items-start mb-6">
+                        <h2 className="text-2xl font-bold text-slate-800">Editor {selectedNode.type === 'module' ? 'Modul' : selectedNode.type === 'folder' ? 'Folder/Bab' : 'Materi'}</h2>
+                        <button onClick={() => { if(confirm('Hapus item ini?')) deleteNode(selectedNode.id); }} className="text-red-500 hover:bg-red-50 p-2 rounded"><Icons.Trash /></button>
                       </div>
                       
-                      <div className="p-6 md:p-8">
-                        {isLocked ? (
-                          <div className="text-center py-20 text-slate-500">
-                            <div className="inline-block p-4 bg-slate-100 rounded-full mb-4"><Icons.Lock /></div>
-                            <h3 className="text-lg font-semibold text-slate-700 mb-2">Materi Terkunci</h3>
-                            <p>Selesaikan urutan materi sebelumnya terlebih dahulu untuk membuka bagian ini.</p>
+                      <div className="space-y-6">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Judul</label>
+                          <input type="text" className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500" value={selectedNode.title} onChange={e => updateNode(selectedNode.id, { title: e.target.value })} />
+                        </div>
+
+                        {(selectedNode.type === 'module' || selectedNode.type === 'folder') && (
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Deskripsi</label>
+                            <textarea className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 h-24" value={selectedNode.description || ''} onChange={e => updateNode(selectedNode.id, { description: e.target.value })} />
+                            
+                            <div className="mt-8 border-t border-slate-200 pt-6">
+                              <h3 className="font-semibold text-slate-800 mb-4">Tambahkan Isi ke dalam {selectedNode.type === 'module' ? 'Modul' : 'Folder'} ini:</h3>
+                              <div className="flex flex-wrap gap-2">
+                                <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'folder', title: 'Sub-Folder Baru', children: [] }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm transition"><Icons.Folder /> + Folder</button>
+                                <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'text', title: 'Materi Teks Baru', content: '' }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-sm transition"><Icons.Text /> + Teks</button>
+                                <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'youtube', title: 'Video Baru', url: '' }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded-lg text-sm transition"><Icons.Video /> + YouTube</button>
+                                <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'file', title: 'File Baru', url: '' }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-lg text-sm transition"><Icons.File /> + Dokumen</button>
+                                <button onClick={() => { const id = generateId(); updateNode(selectedNode.id, { children: [...(selectedNode.children||[]), { id, type: 'quiz', title: 'Kuis Baru', questions: [] }] }); setSelectedNodeId(id); }} className="flex items-center gap-2 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-sm transition"><Icons.Quiz /> + Kuis</button>
+                              </div>
+                            </div>
                           </div>
-                        ) : (
-                          <>
-                            {(activeNode.type === 'module' || activeNode.type === 'folder') && (
-                              <div className="text-center py-10 text-slate-600">
-                                <div className="inline-block p-4 bg-indigo-50 text-indigo-500 rounded-full mb-4">{activeNode.type === 'module' ? <Icons.Book/> : <Icons.Folder/>}</div>
-                                <h3 className="text-xl font-semibold mb-2">{activeNode.title}</h3>
-                                <p>{activeNode.description || 'Pilih sub-materi di menu samping untuk mulai belajar.'}</p>
-                              </div>
-                            )}
+                        )}
 
-                            {activeNode.type === 'text' && (
-                              <div className="prose prose-slate max-w-none text-slate-700 leading-relaxed text-lg">
-                                <ContentRenderer text={activeNode.content} />
-                                {!progress[activeNode.id]?.completed && (
-                                  <div className="mt-12 text-center pt-8 border-t border-slate-100">
-                                    <button onClick={() => markComplete(activeNode.id)} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">Saya Telah Selesai Membaca</button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                        {selectedNode.type === 'text' && (
+                          <div>
+                            <div className="flex justify-between items-end mb-1">
+                              <label className="block text-sm font-medium text-slate-700">Konten Teks (Mendukung Teks, $Rumus$, dan Gambar)</label>
+                              <button onClick={() => { 
+                                const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
+                                input.onchange = (e) => {
+                                  const file = e.target.files[0];
+                                  if (file) {
+                                    if (file.size > 300 * 1024) { alert('Maaf, ukuran gambar terlalu besar (Maks 300 KB). Kompres dulu gambarnya.'); return; }
+                                    const reader = new FileReader();
+                                    reader.onload = (event) => {
+                                      updateNode(selectedNode.id, { content: (selectedNode.content || '') + `\n![Gambar](${event.target.result})\n` });
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                };
+                                input.click();
+                               }} className="text-xs flex items-center gap-1 text-indigo-600 bg-indigo-50 px-2 py-1 rounded hover:bg-indigo-100"><Icons.Image /> Sisipkan Gambar</button>
+                            </div>
+                            <textarea className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono text-sm min-h-[300px]" value={selectedNode.content || ''} onChange={e => updateNode(selectedNode.id, { content: e.target.value })} placeholder="Ketik materi di sini... Gunakan $rumus$ untuk matematika." />
+                            <div className="mt-4 p-4 border border-slate-200 rounded-lg bg-slate-50">
+                              <h4 className="text-sm font-semibold text-slate-500 mb-2">Preview Tampilan:</h4>
+                              <ContentRenderer text={selectedNode.content} className="text-slate-800" />
+                            </div>
+                          </div>
+                        )}
 
-                            {activeNode.type === 'youtube' && (
-                              <div className="text-center">
-                                {getYoutubeId(activeNode.url) ? (
-                                  <iframe className="w-full aspect-video rounded-xl shadow-md mx-auto mb-8" src={`https://www.youtube.com/embed/${getYoutubeId(activeNode.url)}`} allowFullScreen></iframe>
-                                ) : <div className="p-8 bg-red-50 text-red-500 rounded-lg mb-8">URL Video Tidak Valid</div>}
-                                {!progress[activeNode.id]?.completed && (
-                                  <button onClick={() => markComplete(activeNode.id)} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">Tandai Video Selesai</button>
-                                )}
-                              </div>
+                        {(selectedNode.type === 'youtube' || selectedNode.type === 'file') && (
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">URL / Link</label>
+                            <input type="url" className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 mb-4" value={selectedNode.url || ''} onChange={e => updateNode(selectedNode.id, { url: e.target.value })} placeholder={selectedNode.type === 'youtube' ? 'https://youtube.com/watch?v=...' : 'https://drive.google.com/...'} />
+                            {selectedNode.type === 'youtube' && selectedNode.url && getYoutubeId(selectedNode.url) && (
+                               <iframe className="w-full aspect-video rounded-lg shadow-sm" src={`https://www.youtube.com/embed/${getYoutubeId(selectedNode.url)}`} allowFullScreen></iframe>
                             )}
+                          </div>
+                        )}
 
-                            {activeNode.type === 'file' && (
-                              <div className="text-center py-10">
-                                <div className="mb-6 flex justify-center"><Icons.File /></div>
-                                <a href={activeNode.url} target="_blank" rel="noreferrer" className="inline-block bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-3 rounded-lg font-medium transition mb-8">Buka / Unduh Dokumen</a>
-                                <br/>
-                                {!progress[activeNode.id]?.completed && (
-                                  <button onClick={() => markComplete(activeNode.id)} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">Tandai Selesai</button>
-                                )}
-                              </div>
-                            )}
-
-                            {activeNode.type === 'quiz' && (
-                              <QuizViewer quizNode={activeNode} isCompleted={progress[activeNode.id]?.completed} score={progress[activeNode.id]?.score} onFinish={(score) => markComplete(activeNode.id, score)} />
-                            )}
-                          </>
+                        {selectedNode.type === 'quiz' && (
+                          <QuizEditor quizNode={selectedNode} updateNode={updateNode} />
                         )}
                       </div>
                     </div>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                      <Icons.Book />
+                      <p className="mt-4">Pilih atau buat modul di menu samping untuk mengedit.</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <TeacherAccountManager users={users} setUsers={setUsers} />
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function TeacherAccountManager({ users, setUsers }) {
+      const [newUname, setNewUname] = useState('');
+      const [newPass, setNewPass] = useState('');
+      const [newName, setNewName] = useState('');
+
+      const handleAdd = (e) => {
+        e.preventDefault();
+        // PERBAIKAN: Bersihkan inputan guru agar username selalu valid (tanpa spasi & huruf kecil)
+        const cleanUname = newUname.toLowerCase().trim().replace(/\s/g, '');
+        if(users[cleanUname]) return alert('Username sudah ada! Gunakan username lain.');
+        
+        setUsers({ ...users, [cleanUname]: { password: newPass, name: newName, role: 'student' } });
+        setNewUname(''); setNewPass(''); setNewName('');
+        alert('Akun berhasil dibuat! Siswa bisa langsung login.');
+      };
+
+      return (
+        <div className="p-8 w-full max-w-4xl mx-auto flex-1 overflow-y-auto">
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <h3 className="font-semibold text-slate-700 mb-4 border-b pb-2">Tambah Siswa Baru</h3>
+              <form onSubmit={handleAdd} className="space-y-4">
+                <div><label className="block text-sm mb-1 text-slate-600">Nama Lengkap</label><input required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Misal: Andi Susanto"/></div>
+                <div><label className="block text-sm mb-1 text-slate-600">Username (Tanpa Spasi)</label><input required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newUname} onChange={e=>setNewUname(e.target.value.replace(/\s/g,''))} placeholder="Misal: andi123"/></div>
+                <div><label className="block text-sm mb-1 text-slate-600">Password</label><input required type="text" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Buatkan password..."/></div>
+                <button className="w-full bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 font-medium">Buat Akun</button>
+              </form>
+            </div>
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit max-h-[500px] overflow-y-auto">
+              <h3 className="font-semibold text-slate-700 mb-4 border-b pb-2">Daftar Akun Sistem</h3>
+              <ul className="space-y-3">
+                {Object.entries(users).map(([uname, data]) => (
+                  <li key={uname} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <div>
+                      <div className="font-medium text-slate-800">{data.name} <span className="text-xs bg-slate-200 px-2 py-0.5 rounded ml-1">{data.role}</span></div>
+                      <div className="text-sm text-slate-500">User: <code className="text-indigo-600">{uname}</code> | Pass: <code className="text-red-500">{data.password}</code></div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function TeacherSidebarNode({ node, selectedId, onSelect, depth }) {
+      const [isExpanded, setIsExpanded] = useState(true);
+      const isSelected = selectedId === node.id;
+      const hasChildren = node.children && node.children.length > 0;
+
+      const getIcon = () => {
+        switch (node.type) {
+          case 'module': return <Icons.Book />;
+          case 'folder': return <Icons.Folder />;
+          case 'text': return <Icons.Text />;
+          case 'youtube': return <Icons.Video />;
+          case 'file': return <Icons.File />;
+          case 'quiz': return <Icons.Quiz />;
+          default: return <Icons.File />;
+        }
+      };
+
+      return (
+        <div className="select-none">
+          <div className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition ${isSelected ? 'bg-indigo-100 text-indigo-700 font-medium' : 'hover:bg-slate-100 text-slate-600'}`} style={{ paddingLeft: `${depth * 1 + 0.5}rem` }} onClick={() => onSelect(node.id)}>
+            <div onClick={(e) => { if(hasChildren) { e.stopPropagation(); setIsExpanded(!isExpanded); } }} className="w-4 h-4 flex items-center justify-center shrink-0">
+               {hasChildren ? <span className="text-xs text-slate-400 font-bold">{isExpanded ? '▼' : '▶'}</span> : null}
+            </div>
+            <div className="shrink-0">{getIcon()}</div>
+            <span className="truncate text-sm flex-1">{node.title}</span>
+          </div>
+          {isExpanded && node.children && (
+            <div className="mt-1">{node.children.map(child => <TeacherSidebarNode key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} depth={depth + 1} />)}</div>
+          )}
+        </div>
+      );
+    }
+
+    function QuizEditor({ quizNode, updateNode }) {
+      const addQuestion = (type) => {
+        const q = { id: generateId(), type, text: 'Pertanyaan baru?' };
+        if (type === 'multiple_choice') q.options = [{ id: generateId(), text: 'Opsi 1', isCorrect: true }, { id: generateId(), text: 'Opsi 2', isCorrect: false }];
+        else if (type === 'true_false') q.isTrue = true;
+        else if (type === 'essay') q.keyword = '';
+        else if (type === 'matching') q.pairs = [{ id: generateId(), left: 'Kiri 1', right: 'Kanan 1' }];
+        updateNode(quizNode.id, { questions: [...(quizNode.questions||[]), q] });
+      };
+
+      const updateQ = (qId, newProps) => updateNode(quizNode.id, { questions: quizNode.questions.map(q => q.id === qId ? { ...q, ...newProps } : q) });
+      const deleteQ = (qId) => updateNode(quizNode.id, { questions: quizNode.questions.filter(q => q.id !== qId) });
+
+      return (
+        <div className="mt-8 border-t border-slate-200 pt-6">
+          <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
+            <h3 className="text-lg font-semibold text-slate-800">Daftar Soal</h3>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => addQuestion('multiple_choice')} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg font-medium hover:bg-purple-200">+ Pilihan Ganda</button>
+              <button onClick={() => addQuestion('true_false')} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg font-medium hover:bg-purple-200">+ Benar/Salah</button>
+              <button onClick={() => addQuestion('essay')} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg font-medium hover:bg-purple-200">+ Esai</button>
+              <button onClick={() => addQuestion('matching')} className="text-xs bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg font-medium hover:bg-purple-200">+ Menjodohkan</button>
+            </div>
+          </div>
+          <div className="space-y-6">
+            {(quizNode.questions || []).map((q, i) => (
+              <div key={q.id} className="p-5 border border-slate-200 rounded-xl bg-slate-50 shadow-sm relative">
+                <button onClick={() => deleteQ(q.id)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500"><Icons.Trash /></button>
+                <div className="flex gap-2 items-center mb-3 text-sm font-bold text-slate-500">Soal {i+1} <span className="bg-slate-200 px-2 py-0.5 rounded font-normal text-xs">{q.type}</span></div>
+                <textarea className="w-full p-3 border border-slate-300 rounded-lg mb-4 text-sm" value={q.text} onChange={e => updateQ(q.id, { text: e.target.value })} placeholder="Ketik pertanyaan... (Bisa pakai $rumus$ atau sisipkan gambar)" rows="3"/>
+                {q.type === 'multiple_choice' && (
+                  <div className="space-y-2">
+                    {q.options.map((opt) => (
+                      <div key={opt.id} className="flex gap-2 items-center">
+                        <input type="radio" checked={opt.isCorrect} onChange={() => updateQ(q.id, { options: q.options.map(o => ({...o, isCorrect: o.id === opt.id})) })} className="w-4 h-4 text-indigo-600 cursor-pointer" title="Jadikan Kunci Jawaban" />
+                        <input type="text" value={opt.text} onChange={e => updateQ(q.id, { options: q.options.map(o => o.id === opt.id ? {...o, text: e.target.value} : o) })} className="flex-1 p-2 border border-slate-300 rounded-lg text-sm" />
+                        <button onClick={() => updateQ(q.id, { options: q.options.filter(o => o.id !== opt.id) })} className="text-red-400 hover:text-red-600 text-xl">&times;</button>
+                      </div>
+                    ))}
+                    <button onClick={() => updateQ(q.id, { options: [...q.options, { id: generateId(), text: 'Opsi Baru', isCorrect: false }] })} className="text-sm text-indigo-600 mt-2 hover:underline">+ Tambah Opsi</button>
+                  </div>
+                )}
+                {q.type === 'true_false' && (
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2"><input type="radio" checked={q.isTrue} onChange={()=>updateQ(q.id, {isTrue:true})} className="text-indigo-600" /> Kunci Jawaban: Benar</label>
+                    <label className="flex items-center gap-2"><input type="radio" checked={!q.isTrue} onChange={()=>updateQ(q.id, {isTrue:false})} className="text-indigo-600" /> Kunci Jawaban: Salah</label>
+                  </div>
+                )}
+                {q.type === 'essay' && (
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Kata Kunci Penilaian Otomatis (Pisahkan dengan tanda | )</label>
+                    <input type="text" className="w-full p-2 border border-slate-300 rounded-lg text-sm" value={q.keyword} onChange={e=>updateQ(q.id, {keyword: e.target.value})} placeholder="contoh: gaya|tarikan|dorongan" />
+                  </div>
+                )}
+                {q.type === 'matching' && (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-500 text-center mb-1"><div>Premis (Kiri)</div><div>Jawaban (Kanan)</div></div>
+                    {q.pairs.map((pair) => (
+                      <div key={pair.id} className="flex gap-2 items-center">
+                        <input type="text" value={pair.left} onChange={e => updateQ(q.id, { pairs: q.pairs.map(p => p.id === pair.id ? {...p, left: e.target.value} : p) })} className="flex-1 p-2 border border-slate-300 rounded-lg text-sm" />
+                        <input type="text" value={pair.right} onChange={e => updateQ(q.id, { pairs: q.pairs.map(p => p.id === pair.id ? {...p, right: e.target.value} : p) })} className="flex-1 p-2 border border-slate-300 rounded-lg text-sm bg-green-50" />
+                        <button onClick={() => updateQ(q.id, { pairs: q.pairs.filter(p => p.id !== pair.id) })} className="text-red-400 hover:text-red-600 text-xl">&times;</button>
+                      </div>
+                    ))}
+                    <button onClick={() => updateQ(q.id, { pairs: [...q.pairs, { id: generateId(), left: 'Kiri', right: 'Kanan' }] })} className="text-sm text-indigo-600 mt-2 hover:underline">+ Tambah Pasangan</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function StudentDashboard({ modules, progress, setProgress }) {
+      const [selectedNodeId, setSelectedNodeId] = useState(null);
+      
+      const sequentialNodes = getSequentialNodes(modules).filter(n => n.type !== 'module' && n.type !== 'folder');
+      
+      const unlockedIds = new Set();
+      let allPreviousCompleted = true;
+      for (let node of sequentialNodes) {
+        if (allPreviousCompleted) {
+          unlockedIds.add(node.id);
+          if (!progress[node.id]?.completed) allPreviousCompleted = false;
+        }
+      }
+
+      useEffect(() => {
+        if (!selectedNodeId && sequentialNodes.length > 0) {
+          const firstIncomplete = sequentialNodes.find(n => !progress[n.id]?.completed);
+          if (firstIncomplete && unlockedIds.has(firstIncomplete.id)) setSelectedNodeId(firstIncomplete.id);
+          else if (sequentialNodes.length > 0) setSelectedNodeId(sequentialNodes[0].id);
+        }
+      }, [modules]);
+
+      const findNode = (nodes, id) => {
+        for (let node of nodes) {
+          if (node.id === id) return node;
+          if (node.children) { const found = findNode(node.children, id); if (found) return found; }
+        }
+        return null;
+      };
+      const activeNode = selectedNodeId ? findNode(modules, selectedNodeId) : null;
+      const isLocked = activeNode ? !unlockedIds.has(activeNode.id) : true;
+
+      const markComplete = (id, score = null) => setProgress(prev => ({ ...prev, [id]: { completed: true, score } }));
+
+      return (
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
+          <div className="w-full md:w-80 bg-white border-r border-slate-200 flex flex-col shrink-0 md:h-full h-1/3 min-h-[200px]">
+            <div className="p-4 bg-indigo-50 border-b border-indigo-100 flex-shrink-0">
+              <h2 className="font-bold text-indigo-800">Materi Pembelajaran</h2>
+              <div className="mt-2 bg-white rounded-full h-2 overflow-hidden border border-indigo-100">
+                <div className="bg-indigo-500 h-full transition-all" style={{ width: `${sequentialNodes.length ? (Object.values(progress).filter(p=>p.completed).length / sequentialNodes.length) * 100 : 0}%` }}></div>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-1">
+              {modules.map(mod => <StudentSidebarNode key={mod.id} node={mod} selectedId={selectedNodeId} onSelect={setSelectedNodeId} unlockedIds={unlockedIds} progress={progress} depth={0} />)}
+            </div>
+          </div>
+
+          <div className="flex-1 bg-slate-50 overflow-y-auto flex flex-col">
+            {activeNode && (
+              <div className="max-w-4xl mx-auto w-full p-4 md:p-8 flex-1 pb-20">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-full">
+                  <div className="p-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                    <h2 className="text-xl md:text-2xl font-bold text-slate-800 flex items-center gap-3">
+                      {isLocked && <Icons.Lock />} {activeNode.title}
+                    </h2>
+                    {progress[activeNode.id]?.completed && <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-1"><Icons.Unlock/> Selesai</span>}
+                  </div>
+                  
+                  <div className="p-6 md:p-8">
+                    {isLocked ? (
+                      <div className="text-center py-20 text-slate-500">
+                        <div className="inline-block p-4 bg-slate-100 rounded-full mb-4"><Icons.Lock /></div>
+                        <h3 className="text-lg font-semibold text-slate-700 mb-2">Materi Terkunci</h3>
+                        <p>Selesaikan urutan materi sebelumnya terlebih dahulu untuk membuka bagian ini.</p>
+                      </div>
+                    ) : (
+                      <>
+                        {(activeNode.type === 'module' || activeNode.type === 'folder') && (
+                          <div className="text-center py-10 text-slate-600">
+                            <div className="inline-block p-4 bg-indigo-50 text-indigo-500 rounded-full mb-4">{activeNode.type === 'module' ? <Icons.Book/> : <Icons.Folder/>}</div>
+                            <h3 className="text-xl font-semibold mb-2">{activeNode.title}</h3>
+                            <p>{activeNode.description || 'Pilih sub-materi di menu samping untuk mulai belajar.'}</p>
+                          </div>
+                        )}
+                        {activeNode.type === 'text' && (
+                          <div className="prose prose-slate max-w-none text-slate-700 leading-relaxed text-base md:text-lg">
+                            <ContentRenderer text={activeNode.content} />
+                            {!progress[activeNode.id]?.completed && (
+                              <div className="mt-12 text-center pt-8 border-t border-slate-100">
+                                <button onClick={() => markComplete(activeNode.id)} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">Saya Telah Selesai Membaca</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {activeNode.type === 'youtube' && (
+                          <div className="text-center">
+                            {getYoutubeId(activeNode.url) ? (
+                              <iframe className="w-full aspect-video rounded-xl shadow-md mx-auto mb-8" src={`https://www.youtube.com/embed/${getYoutubeId(activeNode.url)}`} allowFullScreen></iframe>
+                            ) : <div className="p-8 bg-red-50 text-red-500 rounded-lg mb-8">URL Video Tidak Valid</div>}
+                            {!progress[activeNode.id]?.completed && (
+                              <button onClick={() => markComplete(activeNode.id)} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">Tandai Video Selesai</button>
+                            )}
+                          </div>
+                        )}
+                        {activeNode.type === 'file' && (
+                          <div className="text-center py-10">
+                            <div className="mb-6 inline-block p-4 bg-orange-100 text-orange-500 rounded-full"><Icons.File /></div>
+                            <br/><a href={activeNode.url} target="_blank" rel="noreferrer" className="inline-block bg-slate-100 hover:bg-slate-200 text-slate-700 px-6 py-3 rounded-lg font-medium transition mb-8">Buka / Unduh Dokumen</a><br/>
+                            {!progress[activeNode.id]?.completed && (
+                              <button onClick={() => markComplete(activeNode.id)} className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition shadow-lg shadow-indigo-200">Tandai Selesai</button>
+                            )}
+                          </div>
+                        )}
+                        {activeNode.type === 'quiz' && (
+                          <QuizViewer quizNode={activeNode} isCompleted={progress[activeNode.id]?.completed} score={progress[activeNode.id]?.score} onFinish={(score) => markComplete(activeNode.id, score)} />
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function StudentSidebarNode({ node, selectedId, onSelect, unlockedIds, progress, depth }) {
+      const [isExpanded, setIsExpanded] = useState(true);
+      const isSelected = selectedId === node.id;
+      const hasChildren = node.children && node.children.length > 0;
+      
+      const isActionable = node.type !== 'module' && node.type !== 'folder';
+      const isLocked = isActionable && !unlockedIds.has(node.id);
+      const isCompleted = progress[node.id]?.completed;
+
+      const getIcon = () => {
+        if (isActionable && isLocked) return <Icons.Lock />;
+        if (isCompleted) return <Icons.Unlock />;
+        switch (node.type) {
+          case 'module': return <Icons.Book />;
+          case 'folder': return <Icons.Folder />;
+          case 'text': return <Icons.Text />;
+          case 'youtube': return <Icons.Video />;
+          case 'file': return <Icons.File />;
+          case 'quiz': return <Icons.Quiz />;
+          default: return <Icons.File />;
+        }
+      };
+
+      return (
+        <div className="select-none">
+          <div className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer transition border mb-1 ${isSelected ? 'bg-indigo-50 border-indigo-200 text-indigo-800 font-medium' : 'border-transparent hover:bg-slate-50 text-slate-600'} ${isLocked ? 'opacity-60 grayscale' : ''}`} style={{ paddingLeft: `${depth * 1 + 0.5}rem` }} onClick={() => { if(!isActionable || !isLocked) onSelect(node.id); }}>
+            <div onClick={(e) => { if(hasChildren) { e.stopPropagation(); setIsExpanded(!isExpanded); } }} className="shrink-0 w-4 h-4 flex items-center justify-center">
+               {hasChildren ? <span className="text-xs text-slate-400 font-bold">{isExpanded ? '▼' : '▶'}</span> : null}
+            </div>
+            <div className="shrink-0">{getIcon()}</div>
+            <span className="truncate text-sm flex-1">{node.title}</span>
+          </div>
+          {isExpanded && node.children && (
+            <div className="mt-0.5">{node.children.map(child => <StudentSidebarNode key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} unlockedIds={unlockedIds} progress={progress} depth={depth + 1} />)}</div>
+          )}
+        </div>
+      );
+    }
+
+    function QuizViewer({ quizNode, isCompleted, score, onFinish }) {
+      const [answers, setAnswers] = useState({});
+      const [isSubmitted, setIsSubmitted] = useState(isCompleted);
+      const [results, setResults] = useState({});
+
+      const questions = quizNode.questions || [];
+
+      const calculateScore = () => {
+        let correctCount = 0;
+        let newResults = {};
+        
+        questions.forEach(q => {
+          let isQCorrect = false;
+          const ans = answers[q.id];
+
+          if (q.type === 'multiple_choice') {
+            const correctOpt = q.options.find(o => o.isCorrect);
+            isQCorrect = correctOpt && ans === correctOpt.id;
+          } else if (q.type === 'true_false') {
+            isQCorrect = ans === q.isTrue;
+          } else if (q.type === 'essay') {
+            if (q.keyword && ans) {
+              const keywords = q.keyword.toLowerCase().split('|');
+              const pAns = ans.toLowerCase();
+              isQCorrect = keywords.some(k => pAns.includes(k.trim()));
+            } else { isQCorrect = !!ans; }
+          } else if (q.type === 'matching') {
+            if(ans && Object.keys(ans).length === q.pairs.length) {
+               isQCorrect = q.pairs.every(p => ans[p.id] === p.right);
+            }
+          }
+          newResults[q.id] = isQCorrect;
+          if (isQCorrect) correctCount++;
+        });
+
+        const finalScore = Math.round((correctCount / questions.length) * 100) || 0;
+        setResults(newResults);
+        setIsSubmitted(true);
+        onFinish(finalScore);
+      };
+
+      if (isCompleted || isSubmitted) {
+        return (
+          <div className="text-center py-10">
+            <div className="w-24 h-24 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl font-bold border-4 border-indigo-200">
+              {score !== null && score !== undefined ? score : (Math.round((Object.values(results).filter(Boolean).length / questions.length)*100) || 0)}
+            </div>
+            <h3 className="text-2xl font-bold text-slate-800 mb-2">Kuis Selesai!</h3>
+            <p className="text-slate-500 mb-8">Anda telah menyelesaikan bagian ini.</p>
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-8">
+          {questions.map((q, i) => (
+            <div key={q.id} className="p-6 bg-white border border-slate-200 rounded-xl shadow-sm">
+              <h4 className="text-lg font-medium text-slate-800 mb-4 flex gap-3">
+                <span className="bg-indigo-100 text-indigo-700 w-8 h-8 flex items-center justify-center rounded-lg shrink-0">{i + 1}</span>
+                <div className="pt-1"><ContentRenderer text={q.text} /></div>
+              </h4>
+              <div className="pl-11">
+                {q.type === 'multiple_choice' && (
+                  <div className="space-y-3">
+                    {q.options.map(opt => (
+                      <label key={opt.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${answers[q.id] === opt.id ? 'bg-indigo-50 border-indigo-300' : 'hover:bg-slate-50 border-slate-200'}`}>
+                        <input type="radio" name={`q-${q.id}`} value={opt.id} checked={answers[q.id] === opt.id} onChange={() => setAnswers({...answers, [q.id]: opt.id})} className="w-4 h-4 text-indigo-600" />
+                        <ContentRenderer text={opt.text} />
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {q.type === 'true_false' && (
+                  <div className="flex gap-4">
+                    <label className={`flex-1 flex justify-center items-center gap-2 p-4 rounded-lg border cursor-pointer transition ${answers[q.id] === true ? 'bg-indigo-50 border-indigo-300 font-semibold text-indigo-700' : 'hover:bg-slate-50 border-slate-200'}`}>
+                      <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === true} onChange={() => setAnswers({...answers, [q.id]: true})} className="hidden" /> Benar
+                    </label>
+                    <label className={`flex-1 flex justify-center items-center gap-2 p-4 rounded-lg border cursor-pointer transition ${answers[q.id] === false ? 'bg-indigo-50 border-indigo-300 font-semibold text-indigo-700' : 'hover:bg-slate-50 border-slate-200'}`}>
+                      <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === false} onChange={() => setAnswers({...answers, [q.id]: false})} className="hidden" /> Salah
+                    </label>
+                  </div>
+                )}
+                {q.type === 'essay' && (
+                  <textarea className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 min-h-[120px]" value={answers[q.id] || ''} onChange={e => setAnswers({...answers, [q.id]: e.target.value})} placeholder="Tulis jawaban Anda di sini..." />
+                )}
+                {q.type === 'matching' && (
+                  <div className="space-y-3">
+                    {q.pairs.map(pair => (
+                      <div key={pair.id} className="flex flex-col sm:flex-row gap-3 items-center">
+                        <div className="flex-1 p-3 bg-slate-100 rounded-lg border border-slate-200 text-sm">{pair.left}</div>
+                        <div className="shrink-0 text-slate-400">⟶</div>
+                        <select className="flex-1 p-3 border border-slate-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500" value={(answers[q.id] || {})[pair.id] || ''} onChange={(e) => setAnswers(prev => ({ ...prev, [q.id]: { ...(prev[q.id] || {}), [pair.id]: e.target.value } })) }>
+                          <option value="" disabled>-- Pilih Pasangan --</option>
+                          {[...q.pairs].sort((a,b) => a.right.localeCompare(b.right)).map(p => (
+                            <option key={p.id} value={p.right}>{p.right}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             </div>
-          );
-        }
+          ))}
+          <button onClick={calculateScore} disabled={Object.keys(answers).length === 0} className="w-full bg-indigo-600 text-white font-bold text-lg py-4 rounded-xl hover:bg-indigo-700 transition shadow-xl shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed">
+            Kumpulkan Jawaban
+          </button>
+        </div>
+      );
+    }
 
-        function StudentSidebarNode({ node, selectedId, onSelect, unlockedIds, progress, depth }) {
-          const [isExpanded, setIsExpanded] = useState(true);
-          const isSelected = selectedId === node.id;
-          const hasChildren = node.children && node.children.length > 0;
-          
-          const isActionable = node.type !== 'module' && node.type !== 'folder';
-          const isLocked = isActionable && !unlockedIds.has(node.id);
-          const isCompleted = progress[node.id]?.completed;
-
-          const getIcon = () => {
-            if (isActionable && isLocked) return <Icons.Lock />;
-            if (isCompleted) return <Icons.Unlock />;
-            switch (node.type) {
-              case 'module': return <Icons.Book />;
-              case 'folder': return <Icons.Folder />;
-              case 'text': return <Icons.Text />;
-              case 'youtube': return <Icons.Video />;
-              case 'file': return <Icons.File />;
-              case 'quiz': return <Icons.Quiz />;
-              default: return <Icons.File />;
-            }
-          };
-
-          return (
-            <div className="select-none">
-              <div 
-                className={`flex items-center gap-2 p-2.5 rounded-lg cursor-pointer transition border mb-1 
-                  ${isSelected ? 'bg-indigo-50 border-indigo-200 text-indigo-800 font-medium' : 'border-transparent hover:bg-slate-50 text-slate-600'} 
-                  ${isLocked ? 'opacity-60 grayscale' : ''}`}
-                style={{ paddingLeft: `${(depth * 1) + 0.5}rem` }}
-                onClick={() => { if(!isActionable || !isLocked) onSelect(node.id); }}
-              >
-                <div onClick={(e) => { if(hasChildren) { e.stopPropagation(); setIsExpanded(!isExpanded); } }} className="shrink-0 w-4 h-4 flex items-center justify-center">
-                   {hasChildren ? <span className="text-xs text-slate-400 font-bold">{isExpanded ? '▼' : '▶'}</span> : null}
-                </div>
-                <div className="shrink-0">{getIcon()}</div>
-                <span className="truncate text-sm flex-1">{node.title}</span>
-              </div>
-              {isExpanded && node.children && (
-                <div className="mt-0.5">
-                  {node.children.map(child => (
-                    <StudentSidebarNode key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} unlockedIds={unlockedIds} progress={progress} depth={depth + 1} />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        }
-
-        function QuizViewer({ quizNode, isCompleted, score, onFinish }) {
-          const [answers, setAnswers] = useState({});
-          const [isSubmitted, setIsSubmitted] = useState(isCompleted);
-          const [results, setResults] = useState({});
-
-          const questions = quizNode.questions || [];
-
-          const handleMatchChange = (qId, pairId, selectedRight) => {
-            setAnswers(prev => ({ ...prev, [qId]: { ...(prev[qId] || {}), [pairId]: selectedRight } }));
-          };
-
-          const calculateScore = () => {
-            let correctCount = 0;
-            let newResults = {};
-            
-            questions.forEach(q => {
-              let isQCorrect = false;
-              const ans = answers[q.id];
-
-              if (q.type === 'multiple_choice') {
-                const correctOpt = q.options.find(o => o.isCorrect);
-                isQCorrect = correctOpt && ans === correctOpt.id;
-              } else if (q.type === 'true_false') {
-                isQCorrect = ans === q.isTrue;
-              } else if (q.type === 'essay') {
-                if (q.keyword && ans) {
-                  const keywords = q.keyword.toLowerCase().split('|');
-                  const pAns = ans.toLowerCase();
-                  isQCorrect = keywords.some(k => pAns.includes(k.trim()));
-                } else {
-                  isQCorrect = !!ans;
-                }
-              } else if (q.type === 'matching') {
-                if(ans && Object.keys(ans).length === q.pairs.length) {
-                   isQCorrect = q.pairs.every(p => ans[p.id] === p.right);
-                }
-              }
-
-              newResults[q.id] = isQCorrect;
-              if (isQCorrect) correctCount++;
-            });
-
-            const rawScore = (correctCount / questions.length) * 100;
-            const finalScore = Math.round(rawScore) || 0;
-            setResults(newResults);
-            setIsSubmitted(true);
-            onFinish(finalScore);
-          };
-
-          if (isCompleted || isSubmitted) {
-            const displayScore = score !== null && score !== undefined ? score : (Math.round((Object.values(results).filter(Boolean).length / questions.length) * 100) || 0);
-            return (
-              <div className="text-center py-10">
-                <div className="w-24 h-24 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl font-bold border-4 border-indigo-200">
-                  {displayScore}
-                </div>
-                <h3 className="text-2xl font-bold text-slate-800 mb-2">Kuis Selesai!</h3>
-                <p className="text-slate-500 mb-8">Anda telah menyelesaikan kuis ini.</p>
-                <div className="text-left max-w-2xl mx-auto space-y-4">
-                   <h4 className="font-semibold text-slate-700">Ringkasan Jawaban:</h4>
-                   {questions.map((q,i) => (
-                     <div key={q.id} className={`p-4 rounded-lg border ${results[q.id] ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                        <div className="flex gap-2">
-                           <span className="font-bold">{i+1}.</span>
-                           <div className="flex-1"><ContentRenderer text={q.text} /></div>
-                           <span>{results[q.id] ? '✅' : '❌'}</span>
-                        </div>
-                     </div>
-                   ))}
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div className="space-y-8">
-              {questions.map((q, i) => (
-                <div key={q.id} className="p-6 bg-white border border-slate-200 rounded-xl shadow-sm">
-                  <h4 className="text-lg font-medium text-slate-800 mb-4 flex gap-3">
-                    <span className="bg-indigo-100 text-indigo-700 w-8 h-8 flex items-center justify-center rounded-lg shrink-0">{i + 1}</span>
-                    <div className="pt-1"><ContentRenderer text={q.text} /></div>
-                  </h4>
-                  
-                  <div className="pl-11">
-                    {q.type === 'multiple_choice' && (
-                      <div className="space-y-3">
-                        {q.options.map(opt => (
-                          <label key={opt.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${answers[q.id] === opt.id ? 'bg-indigo-50 border-indigo-300' : 'hover:bg-slate-50 border-slate-200'}`}>
-                            <input type="radio" name={`q-${q.id}`} value={opt.id} checked={answers[q.id] === opt.id} onChange={() => setAnswers({...answers, [q.id]: opt.id})} className="w-4 h-4 text-indigo-600" />
-                            <ContentRenderer text={opt.text} />
-                          </label>
-                        ))}
-                      </div>
-                    )}
-
-                    {q.type === 'true_false' && (
-                      <div className="flex gap-4">
-                        <label className={`flex-1 flex justify-center items-center gap-2 p-4 rounded-lg border cursor-pointer transition ${answers[q.id] === true ? 'bg-indigo-50 border-indigo-300 font-semibold text-indigo-700' : 'hover:bg-slate-50 border-slate-200'}`}>
-                          <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === true} onChange={() => setAnswers({...answers, [q.id]: true})} className="hidden" /> Benar
-                        </label>
-                        <label className={`flex-1 flex justify-center items-center gap-2 p-4 rounded-lg border cursor-pointer transition ${answers[q.id] === false ? 'bg-indigo-50 border-indigo-300 font-semibold text-indigo-700' : 'hover:bg-slate-50 border-slate-200'}`}>
-                          <input type="radio" name={`q-${q.id}`} checked={answers[q.id] === false} onChange={() => setAnswers({...answers, [q.id]: false})} className="hidden" /> Salah
-                        </label>
-                      </div>
-                    )}
-
-                    {q.type === 'essay' && (
-                      <textarea className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 min-h-[120px]" value={answers[q.id] || ''} onChange={e => setAnswers({...answers, [q.id]: e.target.value})} placeholder="Tulis jawaban Anda di sini..." />
-                    )}
-
-                    {q.type === 'matching' && (
-                      <div className="space-y-3">
-                        {q.pairs.map(pair => (
-                          <div key={pair.id} className="flex flex-col sm:flex-row gap-3 items-center">
-                            <div className="flex-1 p-3 bg-slate-100 rounded-lg border border-slate-200 text-sm">{pair.left}</div>
-                            <div className="shrink-0 text-slate-400">⟶</div>
-                            <select className="flex-1 p-3 border border-slate-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-indigo-500" value={(answers[q.id] || {})[pair.id] || ''} onChange={(e) => handleMatchChange(q.id, pair.id, e.target.value)}>
-                              <option value="" disabled>-- Pilih Pasangan --</option>
-                              {[...q.pairs].sort((a,b) => a.right.localeCompare(b.right)).map(p => (
-                                <option key={p.id} value={p.right}>{p.right}</option>
-                              ))}
-                            </select>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <button onClick={calculateScore} disabled={Object.keys(answers).length === 0} className="w-full bg-indigo-600 text-white font-bold text-lg py-4 rounded-xl hover:bg-indigo-700 transition shadow-xl shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed">
-                Kumpulkan Jawaban
-              </button>
-            </div>
-          );
-        }
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<LMSApp />);
-    </script>
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<LMSApp />);
+  </script>
 </body>
 </html>
