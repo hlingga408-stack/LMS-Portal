@@ -13,13 +13,12 @@
   <!-- Babel untuk JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-  <!-- Firebase SDK (Versi Compat 8/9 untuk kemudahan via CDN) -->
+  <!-- Firebase SDK Compat -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
 
   <style>
     body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
-    /* Loading Spinner */
     .loader {
       border: 4px solid #f3f3f3; border-top: 4px solid #4f46e5;
       border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;
@@ -43,13 +42,11 @@
       appId: "1:1021583607305:web:80edc313d0ebca37841ad8"
     };
 
-    // Inisialisasi Firebase
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
     const db = firebase.firestore();
 
-    // Data Default Jika Database Kosong
     const INITIAL_USERS = {
       guru: { password: '123', role: 'teacher', name: 'Pak Guru Budi' },
       siswa1: { password: '123', role: 'student', name: 'Andi (Siswa)' },
@@ -58,7 +55,6 @@
       { id: 'm1', type: 'module', title: 'Modul Contoh', description: 'Ini adalah modul bawaan pertama.', children: [] }
     ];
 
-    // Helper: LaTeX KaTeX loader
     let katexLoadPromise = null;
     const loadKatex = () => {
       if (katexLoadPromise) return katexLoadPromise;
@@ -135,7 +131,8 @@
       Unlock: () => <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>,
       Trash: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>,
       Image: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
-      Users: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+      Users: () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>,
+      Upload: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
     };
 
     const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -157,7 +154,6 @@
       const [modules, setModules] = useState([]);
       const [studentProgress, setStudentProgress] = useState({});
 
-      // Tarik Data Realtime (Otomatis Refresh)
       useEffect(() => {
         const docRef = db.collection('lms_data').doc('core');
         const unsubscribe = docRef.onSnapshot((doc) => {
@@ -170,13 +166,11 @@
           setIsLoading(false);
         }, (error) => {
           console.error("Gagal terhubung:", error);
-          alert("Gagal membaca Database! Pastikan Rules diset ke 'Start in test mode'.");
           setIsLoading(false);
         });
         return () => unsubscribe();
       }, []);
 
-      // Tarik Nilai Siswa
       useEffect(() => {
         if (currentUser && currentUser.role === 'student') {
           const pRef = db.collection('lms_data').doc(`progress_${currentUser.username}`);
@@ -187,7 +181,6 @@
         }
       }, [currentUser]);
 
-      // Penyimpan Data ke Database
       const handleSetModules = (newModulesOrFunc) => {
         setModules(prev => {
           const updatedModules = typeof newModulesOrFunc === 'function' ? newModulesOrFunc(prev) : newModulesOrFunc;
@@ -252,12 +245,14 @@
 
       const handleLogin = (e) => {
         e.preventDefault();
-        // PERBAIKAN: Hilangkan spasi dan jadikan huruf kecil agar tidak gagal saat diketik dari HP
-        const cleanUsername = username.toLowerCase().trim().replace(/\s/g, '');
-        const user = users[cleanUsername];
+        const cleanInput = username.toLowerCase().trim().replace(/\s/g, '');
+        const user = users[cleanInput];
         
-        if (user && user.password === password) onLogin({ username: cleanUsername, ...user });
-        else setError('Username atau password salah! Pastikan ketikan sudah benar.');
+        if (user && user.password === password) {
+          onLogin({ username: cleanInput, ...user });
+        } else {
+          setError('Username atau password salah! Pastikan ketikan sudah benar.');
+        }
       };
 
       return (
@@ -348,7 +343,7 @@
                     <div className="max-w-4xl mx-auto pb-20">
                       <div className="flex justify-between items-start mb-6">
                         <h2 className="text-2xl font-bold text-slate-800">Editor {selectedNode.type === 'module' ? 'Modul' : selectedNode.type === 'folder' ? 'Folder/Bab' : 'Materi'}</h2>
-                        <button onClick={() => { if(confirm('Hapus item ini?')) deleteNode(selectedNode.id); }} className="text-red-500 hover:bg-red-50 p-2 rounded"><Icons.Trash /></button>
+                        <button onClick={() => deleteNode(selectedNode.id)} className="text-red-500 hover:bg-red-50 p-2 rounded" title="Hapus Item"><Icons.Trash /></button>
                       </div>
                       
                       <div className="space-y-6">
@@ -384,7 +379,10 @@
                                 input.onchange = (e) => {
                                   const file = e.target.files[0];
                                   if (file) {
-                                    if (file.size > 300 * 1024) { alert('Maaf, ukuran gambar terlalu besar (Maks 300 KB). Kompres dulu gambarnya.'); return; }
+                                    if (file.size > 300 * 1024) { 
+                                      alert('Maaf, ukuran gambar terlalu besar (Maks 300 KB). Kompres dulu gambarnya.'); 
+                                      return; 
+                                    }
                                     const reader = new FileReader();
                                     reader.onload = (event) => {
                                       updateNode(selectedNode.id, { content: (selectedNode.content || '') + `\n![Gambar](${event.target.result})\n` });
@@ -393,7 +391,7 @@
                                   }
                                 };
                                 input.click();
-                               }} className="text-xs flex items-center gap-1 text-indigo-600 bg-indigo-50 px-2 py-1 rounded hover:bg-indigo-100"><Icons.Image /> Sisipkan Gambar</button>
+                               }} className="text-xs flex items-center gap-1 text-indigo-600 bg-indigo-50 px-2 py-1 rounded hover:bg-indigo-100"><Icons.Image /> Ambil Gambar</button>
                             </div>
                             <textarea className="w-full p-4 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono text-sm min-h-[300px]" value={selectedNode.content || ''} onChange={e => updateNode(selectedNode.id, { content: e.target.value })} placeholder="Ketik materi di sini... Gunakan $rumus$ untuk matematika." />
                             <div className="mt-4 p-4 border border-slate-200 rounded-lg bg-slate-50">
@@ -438,39 +436,119 @@
       const [newUname, setNewUname] = useState('');
       const [newPass, setNewPass] = useState('');
       const [newName, setNewName] = useState('');
+      const [csvData, setCsvData] = useState('');
+      const [activeSubTab, setActiveSubTab] = useState('single');
+      const [statusMsg, setStatusMsg] = useState('');
 
       const handleAdd = (e) => {
         e.preventDefault();
-        // PERBAIKAN: Bersihkan inputan guru agar username selalu valid (tanpa spasi & huruf kecil)
         const cleanUname = newUname.toLowerCase().trim().replace(/\s/g, '');
-        if(users[cleanUname]) return alert('Username sudah ada! Gunakan username lain.');
+        if(!cleanUname) return setStatusMsg('Error: Username tidak boleh kosong!');
+        if(users[cleanUname]) return setStatusMsg('Error: Username sudah ada! Gunakan username lain.');
         
         setUsers({ ...users, [cleanUname]: { password: newPass, name: newName, role: 'student' } });
         setNewUname(''); setNewPass(''); setNewName('');
-        alert('Akun berhasil dibuat! Siswa bisa langsung login.');
+        setStatusMsg('Sukses: Akun berhasil dibuat!');
+        setTimeout(() => setStatusMsg(''), 3000);
+      };
+
+      const handleDelete = (uname) => {
+        if(uname === 'guru') {
+          setStatusMsg('Error: Akun guru utama tidak dapat dihapus!');
+          return;
+        }
+        const updated = { ...users };
+        delete updated[uname];
+        setUsers(updated);
+        setStatusMsg(`Sukses: Akun ${uname} telah dihapus.`);
+        setTimeout(() => setStatusMsg(''), 3000);
+      };
+
+      const handleBulkUpload = (e) => {
+        e.preventDefault();
+        if(!csvData.trim()) return setStatusMsg('Error: Data teks kosong!');
+        
+        const lines = csvData.split('\n');
+        let addedCount = 0;
+        const updatedUsers = { ...users };
+
+        lines.forEach(line => {
+          const parts = line.split(/[,;\t]/);
+          if (parts.length >= 3) {
+            const name = parts[0].trim();
+            const uname = parts[1].toLowerCase().trim().replace(/\s/g, '');
+            const pass = parts[2].trim();
+            if (uname && pass && !updatedUsers[uname]) {
+              updatedUsers[uname] = { name: name || uname, password: pass, role: 'student' };
+              addedCount++;
+            }
+          }
+        });
+
+        if (addedCount > 0) {
+          setUsers(updatedUsers);
+          setCsvData('');
+          setStatusMsg(`Sukses: Berhasil menambahkan ${addedCount} akun siswa secara massal!`);
+        } else {
+          setStatusMsg('Error: Tidak ada akun valid yang dapat ditambahkan. Format: Nama,Username,Password');
+        }
+        setTimeout(() => setStatusMsg(''), 4000);
       };
 
       return (
-        <div className="p-8 w-full max-w-4xl mx-auto flex-1 overflow-y-auto">
-          <div className="grid md:grid-cols-2 gap-8">
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-              <h3 className="font-semibold text-slate-700 mb-4 border-b pb-2">Tambah Siswa Baru</h3>
-              <form onSubmit={handleAdd} className="space-y-4">
-                <div><label className="block text-sm mb-1 text-slate-600">Nama Lengkap</label><input required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Misal: Andi Susanto"/></div>
-                <div><label className="block text-sm mb-1 text-slate-600">Username (Tanpa Spasi)</label><input required className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newUname} onChange={e=>setNewUname(e.target.value.replace(/\s/g,''))} placeholder="Misal: andi123"/></div>
-                <div><label className="block text-sm mb-1 text-slate-600">Password</label><input required type="text" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Buatkan password..."/></div>
-                <button className="w-full bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 font-medium">Buat Akun</button>
-              </form>
+        <div className="p-6 md:p-8 w-full max-w-5xl mx-auto flex-1 overflow-y-auto">
+          <div className="flex gap-4 mb-6 border-b pb-4">
+            <button className={`px-4 py-2 rounded-lg font-medium text-sm transition ${activeSubTab === 'single' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`} onClick={()=>setActiveSubTab('single')}>+ Tambah Satuan</button>
+            <button className={`px-4 py-2 rounded-lg font-medium text-sm transition ${activeSubTab === 'bulk' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`} onClick={()=>setActiveSubTab('bulk')}>📁 Upload Massal (Excel/CSV)</button>
+          </div>
+
+          {statusMsg && (
+            <div className={`p-4 mb-6 rounded-lg text-sm font-medium ${statusMsg.startsWith('Error') ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
+              {statusMsg}
             </div>
-            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit max-h-[500px] overflow-y-auto">
-              <h3 className="font-semibold text-slate-700 mb-4 border-b pb-2">Daftar Akun Sistem</h3>
-              <ul className="space-y-3">
+          )}
+
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-fit">
+              {activeSubTab === 'single' ? (
+                <>
+                  <h3 className="font-semibold text-slate-700 mb-4 border-b pb-2">Tambah Siswa Baru</h3>
+                  <form onSubmit={handleAdd} className="space-y-4">
+                    <div><label className="block text-sm mb-1 text-slate-600">Nama Lengkap</label><input required className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Misal: Andi Susanto"/></div>
+                    <div><label className="block text-sm mb-1 text-slate-600">Username (Tanpa Spasi)</label><input required className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newUname} onChange={e=>setNewUname(e.target.value.toLowerCase().replace(/\s/g,''))} placeholder="Misal: andi123"/></div>
+                    <div><label className="block text-sm mb-1 text-slate-600">Password</label><input required type="text" className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500" value={newPass} onChange={e=>setNewPass(e.target.value)} placeholder="Buatkan password..."/></div>
+                    <button className="w-full bg-indigo-600 text-white p-2.5 rounded-lg hover:bg-indigo-700 font-medium">Buat Akun</button>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <h3 className="font-semibold text-slate-700 mb-2 border-b pb-2">Upload Data Siswa Massal</h3>
+                  <p className="text-xs text-slate-500 mb-4">Salin (Copy) tabel dari Excel atau ketik dengan format per baris: <code className="bg-slate-100 p-1 rounded">Nama, Username, Password</code></p>
+                  <form onSubmit={handleBulkUpload} className="space-y-4">
+                    <textarea className="w-full p-3 border rounded-lg font-mono text-xs h-36 focus:ring-2 focus:ring-indigo-500" value={csvData} onChange={e=>setCsvData(e.target.value)} placeholder="Contoh:&#10;Budi Santoso, budi123, pass123&#10;Siti Aminah, siti456, pass456" required></textarea>
+                    <button className="w-full bg-indigo-600 text-white p-2.5 rounded-lg hover:bg-indigo-700 font-medium flex items-center justify-center gap-2"><Icons.Upload /> Proses Upload Massal</button>
+                  </form>
+                </>
+              )}
+            </div>
+
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm max-h-[500px] flex flex-col">
+              <h3 className="font-semibold text-slate-700 mb-4 border-b pb-2 flex justify-between items-center">
+                <span>Daftar Akun Sistem</span>
+                <span className="text-xs font-normal bg-slate-100 px-2 py-1 rounded">Total: {Object.keys(users).length} Akun</span>
+              </h3>
+              <ul className="space-y-3 overflow-y-auto flex-1 pr-1">
                 {Object.entries(users).map(([uname, data]) => (
                   <li key={uname} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
                     <div>
-                      <div className="font-medium text-slate-800">{data.name} <span className="text-xs bg-slate-200 px-2 py-0.5 rounded ml-1">{data.role}</span></div>
+                      <div className="font-medium text-slate-800">{data.name} <span className={`text-xs px-2 py-0.5 rounded ml-1 ${data.role === 'teacher' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-700'}`}>{data.role}</span></div>
                       <div className="text-sm text-slate-500">User: <code className="text-indigo-600">{uname}</code> | Pass: <code className="text-red-500">{data.password}</code></div>
                     </div>
+                    {data.role !== 'teacher' && (
+                      <button onClick={() => handleDelete(uname)} className="text-red-400 hover:text-red-600 p-2 rounded hover:bg-red-50 transition" title="Hapus Akun">
+                        <Icons.Trash />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -540,9 +618,9 @@
           <div className="space-y-6">
             {(quizNode.questions || []).map((q, i) => (
               <div key={q.id} className="p-5 border border-slate-200 rounded-xl bg-slate-50 shadow-sm relative">
-                <button onClick={() => deleteQ(q.id)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500"><Icons.Trash /></button>
+                <button onClick={() => deleteQ(q.id)} className="absolute top-4 right-4 text-slate-400 hover:text-red-500" title="Hapus Soal"><Icons.Trash /></button>
                 <div className="flex gap-2 items-center mb-3 text-sm font-bold text-slate-500">Soal {i+1} <span className="bg-slate-200 px-2 py-0.5 rounded font-normal text-xs">{q.type}</span></div>
-                <textarea className="w-full p-3 border border-slate-300 rounded-lg mb-4 text-sm" value={q.text} onChange={e => updateQ(q.id, { text: e.target.value })} placeholder="Ketik pertanyaan... (Bisa pakai $rumus$ atau sisipkan gambar)" rows="3"/>
+                <textarea className="w-full p-3 border border-slate-300 rounded-lg mb-4 text-sm" value={q.text} onChange={e => updateQ(q.id, { text: e.target.value })} placeholder="Ketik pertanyaan..." rows="3"/>
                 {q.type === 'multiple_choice' && (
                   <div className="space-y-2">
                     {q.options.map((opt) => (
