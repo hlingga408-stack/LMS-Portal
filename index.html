@@ -36,13 +36,11 @@
     <!-- Di sinilah Aplikasi LUMINA akan ditampilkan -->
     <div id="root" class="h-full"></div>
 
-    <!-- SCRIPT UTAMA APLIKASI -->
+    <!-- SCRIPT UTAMA APLIKASI (REACT) -->
     <script type="text/babel" data-type="module">
-        // 1. Memanggil komponen inti dari Internet (Tanpa perlu install)
         import React, { useState, useEffect } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
         
-        // 2. Memanggil Ikon-ikon
         import { 
           BookOpen, CheckCircle, ChevronDown, ChevronRight, FileText, 
           Folder, PlaySquare, Plus, CheckSquare, Trash2, Users, FileUp, 
@@ -50,59 +48,63 @@
           Check, Library, Award, FileSpreadsheet, Printer
         } from 'https://esm.sh/lucide-react@0.292.0';
 
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const app = firebaseConfig && Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
+        const auth = app ? getAuth(app) : null;
+        const db = app ? getFirestore(app) : null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'lumina-lms-online';
+
         // =====================================================================
-        // DATA AWAL (DEFAULT)
+        // DATA AWAL / DEMO FALLBACK (Jika Cloud belum tersambung)
         // =====================================================================
         const INITIAL_DATA = [
           {
-            id: 'c1',
-            type: 'course',
-            title: 'KURSUS DEMO: Pemrograman Web',
-            isOpen: true,
-            isLocked: false,
+            id: 'c1', type: 'course', title: 'Kursus 1: Pemrograman Web', isOpen: true, isLocked: false,
             items: [
               {
-                id: 'm1',
-                type: 'module',
-                title: 'Modul 1: Pengenalan',
-                isOpen: true,
+                id: 'm1', type: 'module', title: 'Modul 1: Pengenalan', isOpen: true,
                 items: [
-                  { id: 'm1-1', type: 'text', title: 'Selamat Datang di LUMINA', content: 'Ini adalah contoh materi teks.', attachment: null, attachmentType: null }
+                  { id: 'm1-1', type: 'text', title: 'Selamat Datang', content: 'Selamat datang di kursus ini.', attachment: null, attachmentType: null },
+                  { 
+                    id: 'm1-2', type: 'quiz', title: 'Kuis 1',
+                    questions: [{ id: 'q1', type: 'multiple_choice', question: 'Apa ibu kota Indonesia?', options: ['Jakarta', 'Bandung', 'Surabaya', 'Medan', 'Bali'], correctAnswer: 'Jakarta', explanation: 'Jakarta adalah ibu kota negara Republik Indonesia.' }]
+                  }
                 ]
               }
             ]
           }
         ];
 
-        // =====================================================================
-        // KOMPONEN APLIKASI UTAMA (APP)
-        // =====================================================================
+        const INITIAL_STUDENTS = [
+          { id: 's1', name: 'Budi Santoso', nis: '1001', progress: 45 },
+          { id: 's2', name: 'Siti Aminah', nis: '1002', progress: 80 }
+        ];
+
         function App() {
-          // --- State Autentikasi ---
+          const [firebaseUser, setFirebaseUser] = useState(null);
           const [isLoggedIn, setIsLoggedIn] = useState(false);
           const [username, setUsername] = useState('');
           const [password, setPassword] = useState('');
           const [loginError, setLoginError] = useState('');
 
-          // --- State Tampilan ---
           const [viewMode, setViewMode] = useState('teacher'); 
           const [activeMainTab, setActiveMainTab] = useState('curriculum'); 
           
-          // --- State Data Utama ---
           const [data, setData] = useState(INITIAL_DATA);
+          const [students, setStudents] = useState(INITIAL_STUDENTS);
+          const [submissions, setSubmissions] = useState([]);
+
           const [activeItemId, setActiveItemId] = useState(null);
           const [activeStudentCourseId, setActiveStudentCourseId] = useState(null);
           
-          // --- State Siswa & Nilai ---
-          const [students, setStudents] = useState([]);
-          const [submissions, setSubmissions] = useState([]);
-          
-          // --- State Progres Siswa Individual ---
           const [completedItems, setCompletedItems] = useState([]);
           const [studentAnswers, setStudentAnswers] = useState({});
           const [quizResults, setQuizResults] = useState({});
           
-          // --- State Form & Modals ---
           const [studentFormMode, setStudentFormMode] = useState(null);
           const [manualForm, setManualForm] = useState({ name: '', nis: '' });
           const [massForm, setMassForm] = useState('');
@@ -111,31 +113,100 @@
 
           const generateId = () => Math.random().toString(36).substr(2, 9);
 
+          useEffect(() => {
+            if (!auth) return;
+            const initAuth = async () => {
+              try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                  await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                  await signInAnonymously(auth);
+                }
+              } catch (error) { console.error("Cloud Auth Error:", error); }
+            };
+            initAuth();
+            return onAuthStateChanged(auth, (user) => setFirebaseUser(user));
+          }, []);
+
+          useEffect(() => {
+            if (!firebaseUser || !db) return;
+            
+            const unsubData = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'curriculum'), (docSnap) => {
+              if (docSnap.exists()) setData(docSnap.data().tree || []);
+              else handleSetData(INITIAL_DATA);
+            }, (err) => console.error("Data Listener Error:", err));
+
+            const unsubStudents = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'students'), (docSnap) => {
+              if (docSnap.exists()) setStudents(docSnap.data().list || []);
+              else handleSetStudents(INITIAL_STUDENTS);
+            }, (err) => console.error("Students Listener Error:", err));
+
+            const unsubSubmissions = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'submissions'), (docSnap) => {
+              if (docSnap.exists()) setSubmissions(docSnap.data().list || []);
+            }, (err) => console.error("Submissions Listener Error:", err));
+
+            const unsubProgress = onSnapshot(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'lumina_progress', 'state'), (docSnap) => {
+              if (docSnap.exists()) {
+                const d = docSnap.data();
+                setCompletedItems(d.completedItems || []);
+                setStudentAnswers(d.studentAnswers || {});
+                setQuizResults(d.quizResults || {});
+              }
+            }, (err) => console.error("Progress Listener Error:", err));
+
+            return () => { unsubData(); unsubStudents(); unsubSubmissions(); unsubProgress(); };
+          }, [firebaseUser]);
+
+          // Optimistic UI Savers
+          const handleSetData = (newData) => {
+            setData(newData);
+            if (firebaseUser && db) setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'curriculum'), { tree: newData });
+          };
+          const handleSetStudents = (newStudents) => {
+            setStudents(newStudents);
+            if (firebaseUser && db) setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'students'), { list: newStudents });
+          };
+          const handleSetSubmissions = (newSubmissions) => {
+            setSubmissions(newSubmissions);
+            if (firebaseUser && db) setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'submissions'), { list: newSubmissions });
+          };
+          const handleUpdateProgress = (partialUpdate) => {
+            const nextCompleted = partialUpdate.completedItems !== undefined ? partialUpdate.completedItems : completedItems;
+            const nextAnswers = partialUpdate.studentAnswers !== undefined ? partialUpdate.studentAnswers : studentAnswers;
+            const nextResults = partialUpdate.quizResults !== undefined ? partialUpdate.quizResults : quizResults;
+            
+            if (partialUpdate.completedItems) setCompletedItems(nextCompleted);
+            if (partialUpdate.studentAnswers) setStudentAnswers(nextAnswers);
+            if (partialUpdate.quizResults) setQuizResults(nextResults);
+
+            if (firebaseUser && db) {
+              setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'lumina_progress', 'state'), {
+                completedItems: nextCompleted, studentAnswers: nextAnswers, quizResults: nextResults
+              }, { merge: true });
+            }
+          };
+
           const handleLogin = (e) => {
             e.preventDefault();
-            // Akun Guru sesuai permintaan: username bebas/tidak dicek ketat, password "19882026"
-            if (password === '19882026') {
+            if (username === 'guru' && password === '19882026') {
               setIsLoggedIn(true);
               setViewMode('teacher');
+              setActiveMainTab('curriculum');
               setLoginError('');
-            } 
-            // Akun Siswa (Demo)
-            else if (password === 'siswa123') {
+            } else if (username === 'siswa' && password === 'siswa123') {
               setIsLoggedIn(true);
               setViewMode('student');
               setActiveStudentCourseId(null);
+              setActiveMainTab('curriculum');
               setLoginError('');
             } else {
-              setLoginError('Password yang Anda masukkan salah. Silakan coba lagi.');
+              setLoginError('Kredensial yang Anda masukkan salah!');
             }
           };
 
           const handleLogout = () => {
-            setIsLoggedIn(false);
-            setUsername('');
-            setPassword('');
-            setActiveItemId(null);
-            setActiveStudentCourseId(null);
+            setIsLoggedIn(false); setUsername(''); setPassword('');
+            setActiveItemId(null); setActiveStudentCourseId(null);
           };
 
           const showConfirm = (message, onConfirm) => setConfirmModal({ isOpen: true, message, onConfirm });
@@ -144,10 +215,7 @@
           const findNode = (nodes, id) => {
             for (const node of nodes) {
               if (node.id === id) return node;
-              if (node.items) {
-                const found = findNode(node.items, id);
-                if (found) return found;
-              }
+              if (node.items) { const found = findNode(node.items, id); if (found) return found; }
             }
             return null;
           };
@@ -167,10 +235,7 @@
             for (const node of currentNodes) {
               const courseContext = node.type === 'course' ? node : currentCourse;
               if (node.id === targetId) return courseContext;
-              if (node.items) {
-                const foundCourse = getCourseForNode(targetId, node.items, courseContext);
-                if (foundCourse) return foundCourse;
-              }
+              if (node.items) { const foundCourse = getCourseForNode(targetId, node.items, courseContext); if (foundCourse) return foundCourse; }
             }
             return null;
           };
@@ -202,21 +267,19 @@
               if (node.items) return { ...node, items: updateNode(node.items) };
               return node;
             });
-            setData(updateNode(data));
+            handleSetData(updateNode(data));
           };
+
+          const toggleNode = (id) => handleDataChange(id, { isOpen: !findNode(data, id)?.isOpen });
 
           const handleAddCourse = () => {
             const newCourse = { id: generateId(), type: 'course', title: 'Kursus Baru', isOpen: true, isLocked: true, items: [] };
-            setData([...data, newCourse]);
-            setActiveItemId(newCourse.id);
+            handleSetData([...data, newCourse]); setActiveItemId(newCourse.id);
           };
 
           const handleAddItem = (parentId, type) => {
             const newItem = {
-              id: generateId(),
-              type: type,
-              title: type === 'folder' ? 'Folder Baru' : type === 'module' ? 'Modul Baru' : `Materi ${type} Baru`,
-              content: '',
+              id: generateId(), type: type, title: type === 'folder' ? 'Folder Baru' : type === 'module' ? 'Modul Baru' : `Materi ${type} Baru`, content: '',
               ...(type === 'folder' || type === 'module' ? { isOpen: true, items: [] } : {}),
               ...(type === 'quiz' ? { questions: [] } : {})
             };
@@ -225,59 +288,52 @@
               if (node.items) return { ...node, items: updateNode(node.items) };
               return node;
             });
-            setData(updateNode(data));
-            setActiveItemId(newItem.id);
+            handleSetData(updateNode(data)); setActiveItemId(newItem.id);
           };
 
           const handleDeleteItem = (id) => {
-            showConfirm("Yakin ingin menghapus item ini beserta isinya secara permanen?", () => {
+            showConfirm("Yakin ingin menghapus item ini dari sistem Cloud beserta seluruh isinya?", () => {
               const filterNodes = (nodes) => nodes.filter(node => node.id !== id).map(node => {
                 if (node.items) return { ...node, items: filterNodes(node.items) };
                 return node;
               });
-              setData(filterNodes(data));
-              if (activeItemId === id) setActiveItemId(null);
+              handleSetData(filterNodes(data)); if (activeItemId === id) setActiveItemId(null);
             });
+          };
+
+          const handleAddManualStudent = (e) => {
+            e.preventDefault(); if (!manualForm.name || !manualForm.nis) return;
+            handleSetStudents([...students, { id: generateId(), name: manualForm.name, nis: manualForm.nis, progress: 0 }]);
+            setManualForm({ name: '', nis: '' }); setStudentFormMode(null);
           };
 
           const handleMassImportSubmit = () => {
             if (!massForm.trim()) return;
-            const lines = massForm.split('\n');
-            const newStudents = [];
+            const lines = massForm.split('\n'); const newStudents = [];
             lines.forEach(line => {
               if(!line.trim()) return;
               const parts = line.split(',');
               if (parts.length >= 2) newStudents.push({ id: generateId(), name: parts[0].trim(), nis: parts[1].trim(), progress: 0 });
             });
             if (newStudents.length > 0) {
-              setStudents([...students, ...newStudents]);
-              setMassForm('');
-              setStudentFormMode(null);
+              handleSetStudents([...students, ...newStudents]); setMassForm(''); setStudentFormMode(null);
             }
           };
 
           const handleExportExcel = () => {
             const csvHeaders = ["Nama Siswa", "NIS/ID", "Judul Kuis / Modul", "Nilai Akhir"];
-            // Menggunakan titik koma (;) agar otomatis rapi per kolom saat dibuka di MS Excel Indonesia
             const csvRows = submissions.map(row => `"${row.studentName}";"${row.nis}";"${row.quizTitle}";"${row.score}"`);
             const csvContent = "\uFEFF" + csvHeaders.join(";") + "\n" + csvRows.join("\n");
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", "Rekap_Nilai_LUMINA.csv");
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+            link.setAttribute("href", url); link.setAttribute("download", "Rekap_Nilai_Lumina.csv");
+            document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
           };
 
           const handlePrint = () => {
             const printWindow = window.open('', '_blank', 'width=800,height=600');
-            if (!printWindow) {
-               showConfirm('Pop-up diblokir oleh browser. Harap izinkan pop-up (Allow Pop-ups) untuk mencetak PDF.', () => {});
-               return;
-            }
+            if (!printWindow) { showConfirm('Pop-up diblokir oleh browser. Harap izinkan pop-up (Allow Pop-ups) untuk mencetak/menyimpan PDF.', () => {}); return; }
             const htmlContent = `
               <!DOCTYPE html><html><head><title>Laporan Nilai LUMINA</title>
               <style>
@@ -300,9 +356,7 @@
               <script>window.onload=function(){setTimeout(function(){window.print();window.close();},500);};<\/script>
               </body></html>
             `;
-            printWindow.document.open();
-            printWindow.document.write(htmlContent);
-            printWindow.document.close();
+            printWindow.document.open(); printWindow.document.write(htmlContent); printWindow.document.close();
           };
 
           const renderTree = (nodes, level = 0) => {
@@ -311,6 +365,7 @@
               const isActive = node.id === activeItemId;
               const isLocked = isNodeLocked(node);
               const isCompleted = completedItems.includes(node.id);
+              const isActionableNode = ['text', 'video', 'document', 'quiz'].includes(node.type);
               
               let Icon = FileText;
               if (node.type === 'course') Icon = Library;
@@ -342,7 +397,7 @@
                   >
                     {isFolder ? (
                       <button 
-                        onClick={(e) => { e.stopPropagation(); if (!(isLocked && viewMode === 'student')) handleDataChange(node.id, {isOpen: !node.isOpen}); }}
+                        onClick={(e) => { e.stopPropagation(); if (!(isLocked && viewMode === 'student')) toggleNode(node.id); }}
                         className={`p-1 hover:bg-slate-200 rounded shrink-0 mr-1 ${isLocked ? 'pointer-events-none' : ''}`}
                       >
                         {node.isOpen ? <ChevronDown size={14} className="text-slate-500"/> : <ChevronRight size={14} className="text-slate-500"/>}
@@ -355,7 +410,7 @@
                     <div className="flex items-center shrink-0 ml-2">
                        {isLocked ? <Lock size={14} className="text-slate-400" /> 
                        : isCompleted ? <CheckCircle size={14} className="text-emerald-500" /> 
-                       : (isActive && viewMode === 'student' && !isFolder) ? <Unlock size={14} className="text-blue-500" /> : null}
+                       : (isActive && viewMode === 'student' && isActionableNode) ? <Unlock size={14} className="text-blue-500" /> : null}
                     </div>
                   </div>
                   
@@ -371,21 +426,36 @@
 
           const renderQuizEditor = (item) => {
             const questions = item.questions || [];
-            const updateQuestion = (qId, changes) => handleDataChange(item.id, { questions: questions.map(q => q.id === qId ? { ...q, ...changes } : q) });
+            
+            const updateQuestion = (qId, changes) => {
+              handleDataChange(item.id, { questions: questions.map(q => q.id === qId ? { ...q, ...changes } : q) });
+            };
 
             const handleQuizSubmit = () => {
                let correctCount = 0;
                questions.forEach(q => {
                   if (q.type === 'multiple_choice' || q.type === 'true_false') {
                      if (studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer) correctCount++;
+                  } else if (q.type === 'matching') {
+                     let pairCorrect = 0;
+                     q.pairs.forEach((p, idx) => {
+                        if(studentAnswers[`${item.id}-${q.id}-pair${idx}`] === p.right) pairCorrect++;
+                     });
+                     if(pairCorrect === q.pairs.length && q.pairs.length > 0) correctCount++;
                   }
                });
+               
                const maxScore = questions.length > 0 ? questions.length : 1;
                const finalScore = Math.round((correctCount / maxScore) * 100);
 
-               setQuizResults({ ...quizResults, [item.id]: finalScore });
-               setCompletedItems([...completedItems, item.id]);
-               setSubmissions([...submissions, { id: generateId(), studentName: 'Siswa Aktif', nis: '1234', quizTitle: item.title, score: finalScore }]);
+               handleUpdateProgress({
+                  quizResults: { ...quizResults, [item.id]: finalScore },
+                  completedItems: [...completedItems, item.id]
+               });
+
+               handleSetSubmissions([...submissions, {
+                  id: generateId(), studentName: 'Siswa Aktif', nis: 'ID-' + (firebaseUser?.uid?.substring(0,4) || '9999'), quizTitle: item.title, score: finalScore
+               }]);
             };
 
             const renderTextWithLatex = (text) => {
@@ -400,13 +470,16 @@
             return (
               <div className="space-y-6 mt-6">
                 <h3 className="font-bold text-lg text-slate-800 border-b pb-2">Daftar Soal Kuis</h3>
+                
                 {questions.length === 0 ? <p className="text-slate-500 italic text-sm">Belum ada soal ditambahkan.</p> : (
                   questions.map((q, index) => (
                     <div key={q.id} className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm relative">
                       <div className="absolute top-4 right-4 flex gap-2">
                         <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md uppercase tracking-wider">{q.type.replace('_', ' ')}</span>
                         {viewMode === 'teacher' && (
-                          <button onClick={() => showConfirm("Hapus soal ini?", () => handleDataChange(item.id, { questions: questions.filter(quest => quest.id !== q.id) }))} className="text-red-400 hover:text-red-600 p-1 bg-red-50 rounded-md"><Trash2 size={16} /></button>
+                          <button onClick={() => showConfirm("Hapus soal ini?", () => handleDataChange(item.id, { questions: questions.filter(quest => quest.id !== q.id) }))} className="text-red-400 hover:text-red-600 p-1 bg-red-50 rounded-md">
+                            <Trash2 size={16} />
+                          </button>
                         )}
                       </div>
 
@@ -422,61 +495,138 @@
                         </div>
                         
                         {viewMode === 'teacher' ? (
-                          <textarea value={q.question} onChange={(e) => updateQuestion(q.id, {question: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[80px]" placeholder="Ketik pertanyaan..." />
+                          <>
+                            <textarea value={q.question} onChange={(e) => updateQuestion(q.id, {question: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[80px] mb-2" placeholder="Ketik pertanyaan..." />
+                            {(q.question.includes('[LATEX:') || q.question.length > 0) && (
+                              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800"><span className="font-bold text-slate-500 text-xs block mb-1">Preview Soal:</span>{renderTextWithLatex(q.question)}</div>
+                            )}
+                          </>
                         ) : <div className="text-slate-800 font-medium">{renderTextWithLatex(q.question)}</div>}
                         
                         {q.imageUrl && (
                           <div className="mt-3 relative inline-block max-w-full">
-                            <img src={q.imageUrl} alt="Soal" className="max-h-[300px] rounded-lg border shadow-sm" />
-                            {viewMode === 'teacher' && <button onClick={() => updateQuestion(q.id, {imageUrl: ''})} className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-md"><Trash2 size={14}/></button>}
+                            <img src={q.imageUrl} alt="Gambar Soal" className="max-h-[300px] rounded-lg border border-slate-200 shadow-sm" />
+                            {viewMode === 'teacher' && (
+                              <button onClick={() => showConfirm("Hapus gambar?", () => updateQuestion(q.id, {imageUrl: ''}))} className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-md shadow-sm"><Trash2 size={14} /></button>
+                            )}
                           </div>
                         )}
                       </div>
 
                       {q.type === 'multiple_choice' && (
                         <div className="space-y-2 ml-4">
-                          <p className="text-sm font-bold text-slate-600 mb-2">Pilihan Jawaban (Tandai Kunci):</p>
+                          <p className="text-sm font-bold text-slate-600 mb-2">Pilihan Jawaban (Tandai Kunci Benar):</p>
                           {q.options.map((opt, optIndex) => (
                             <div key={optIndex} className="flex items-center gap-2">
                               {viewMode === 'teacher' ? (
-                                <><input type="radio" name={`correct-${q.id}`} checked={q.correctAnswer === opt} onChange={() => updateQuestion(q.id, {correctAnswer: opt})} className="w-4 h-4"/><input type="text" value={opt} onChange={(e) => { const newOpts = [...q.options]; newOpts[optIndex] = e.target.value; updateQuestion(q.id, {options: newOpts, correctAnswer: q.correctAnswer === opt ? e.target.value : q.correctAnswer}); }} className="flex-1 border-b p-1 text-sm outline-none"/><button onClick={() => updateQuestion(q.id, {options: q.options.filter((_, i) => i !== optIndex)})} className="text-slate-400 hover:text-red-500"><X size={14}/></button></>
+                                <>
+                                  <input type="radio" name={`correct-${q.id}`} checked={q.correctAnswer === opt} onChange={() => updateQuestion(q.id, {correctAnswer: opt})} className="w-4 h-4 text-indigo-600"/>
+                                  <input type="text" value={opt} onChange={(e) => {
+                                      const newOpts = [...q.options]; newOpts[optIndex] = e.target.value;
+                                      const newCorrect = q.correctAnswer === opt ? e.target.value : q.correctAnswer;
+                                      updateQuestion(q.id, {options: newOpts, correctAnswer: newCorrect});
+                                    }} className="flex-1 border-b border-slate-200 p-1 text-sm outline-none focus:border-indigo-500"/>
+                                  <button onClick={() => showConfirm("Hapus Opsi?", () => updateQuestion(q.id, {options: q.options.filter((_, i) => i !== optIndex)}))} className="text-slate-400 hover:text-red-500"><X size={14}/></button>
+                                </>
                               ) : (
-                                <label className="flex items-center gap-2 cursor-pointer w-full p-2 hover:bg-slate-50 rounded"><input type="radio" name={`student-${q.id}`} disabled={quizResults[item.id] !== undefined} checked={studentAnswers[`${item.id}-${q.id}`] === opt} onChange={() => setStudentAnswers({...studentAnswers, [`${item.id}-${q.id}`]: opt})} className="w-4 h-4"/><span className="text-sm">{opt}</span></label>
+                                <label className="flex items-center gap-2 cursor-pointer w-full p-2 hover:bg-slate-50 rounded border border-transparent">
+                                  <input type="radio" name={`student-${q.id}`} disabled={quizResults[item.id] !== undefined} checked={studentAnswers[`${item.id}-${q.id}`] === opt} onChange={() => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}`]: opt}})} className="w-4 h-4 text-indigo-600"/>
+                                  <span className="text-sm">{opt}</span>
+                                </label>
                               )}
                             </div>
                           ))}
-                          {viewMode === 'teacher' && <button onClick={() => updateQuestion(q.id, {options: [...q.options, `Opsi ${q.options.length + 1}`]})} className="text-xs font-bold text-indigo-600 mt-2 hover:bg-indigo-50 px-2 py-1 rounded">+ Tambah Opsi</button>}
+                          {viewMode === 'teacher' && (
+                            <button onClick={() => updateQuestion(q.id, {options: [...q.options, `Opsi ${q.options.length + 1}`]})} className="text-xs font-bold text-indigo-600 flex items-center gap-1 mt-2 hover:bg-indigo-50 px-2 py-1 rounded"><Plus size={14}/> Tambah Opsi Lain</button>
+                          )}
                         </div>
                       )}
-                      
+
                       {q.type === 'true_false' && (
                         <div className="space-y-2 ml-4">
-                          {['Benar', 'Salah'].map(opt => (
-                             <label key={opt} className="flex items-center gap-2 cursor-pointer w-full p-2"><input type="radio" name={`${viewMode}-${q.id}`} disabled={viewMode==='student' && quizResults[item.id]!==undefined} checked={viewMode==='teacher' ? q.correctAnswer === opt : studentAnswers[`${item.id}-${q.id}`] === opt} onChange={() => viewMode==='teacher' ? updateQuestion(q.id, {correctAnswer: opt}) : setStudentAnswers({...studentAnswers, [`${item.id}-${q.id}`]: opt})}/><span className="text-sm">{opt}</span></label>
+                          <p className="text-sm font-bold text-slate-600 mb-2">Jawaban Benar:</p>
+                          {['Benar', 'Salah'].map((opt) => (
+                            <div key={opt} className="flex items-center gap-2">
+                              {viewMode === 'teacher' ? (
+                                <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name={`correct-${q.id}`} checked={q.correctAnswer === opt} onChange={() => updateQuestion(q.id, {correctAnswer: opt})} /><span className="text-sm">{opt}</span></label>
+                              ) : (
+                                <label className="flex items-center gap-2 cursor-pointer w-full p-2 hover:bg-slate-50 rounded"><input type="radio" name={`student-${q.id}`} disabled={quizResults[item.id] !== undefined} checked={studentAnswers[`${item.id}-${q.id}`] === opt} onChange={() => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}`]: opt}})} /><span className="text-sm">{opt}</span></label>
+                              )}
+                            </div>
                           ))}
                         </div>
                       )}
 
+                      {q.type === 'essay' && (
+                        <div className="ml-4 mt-2">
+                          {viewMode === 'teacher' ? (
+                            <textarea value={q.correctAnswer} onChange={(e) => updateQuestion(q.id, {correctAnswer: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[60px]" placeholder="Keyword kunci jawaban (untuk guru saja)..." />
+                          ) : (
+                            <textarea disabled={quizResults[item.id] !== undefined} value={studentAnswers[`${item.id}-${q.id}`] || ''} onChange={(e) => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}`]: e.target.value}})} className="w-full border border-slate-300 rounded-lg p-3 text-sm outline-none focus:border-indigo-500 min-h-[100px]" placeholder="Ketik jawaban Anda..." />
+                          )}
+                        </div>
+                      )}
+
+                      {q.type === 'matching' && (
+                        <div className="ml-4 mt-2">
+                          <p className="text-sm font-bold text-slate-600 mb-2">Pasangan Kunci Jawaban:</p>
+                          <div className="space-y-2">
+                            {q.pairs?.map((pair, pIdx) => (
+                              <div key={pIdx} className="flex gap-2 items-center">
+                                {viewMode === 'teacher' ? (
+                                  <><input type="text" value={pair.left} onChange={(e) => { const np = [...q.pairs]; np[pIdx].left = e.target.value; updateQuestion(q.id, {pairs: np}); }} className="flex-1 border p-1 rounded text-sm" placeholder="Sisi Kiri" /><span className="text-slate-400">{'->'}</span><input type="text" value={pair.right} onChange={(e) => { const np = [...q.pairs]; np[pIdx].right = e.target.value; updateQuestion(q.id, {pairs: np}); }} className="flex-1 border p-1 rounded text-sm" placeholder="Sisi Kanan" /><button onClick={() => showConfirm("Hapus?", () => updateQuestion(q.id, {pairs: q.pairs.filter((_, i) => i !== pIdx)}))} className="text-red-400 p-1"><X size={14}/></button></>
+                                ) : (
+                                  <><div className="flex-1 p-2 bg-slate-50 border rounded text-sm">{pair.left}</div><span className="text-slate-400 mx-2">{'->'}</span>
+                                    <select disabled={quizResults[item.id] !== undefined} value={studentAnswers[`${item.id}-${q.id}-pair${pIdx}`] || ''} onChange={(e) => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}-pair${pIdx}`]: e.target.value}})} className="flex-1 border p-2 rounded text-sm bg-white">
+                                      <option value="">-- Pilih --</option>
+                                      {[...q.pairs].map(p=>p.right).sort().map((opt, idx) => <option key={idx} value={opt}>{opt}</option>)}
+                                    </select>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                            {viewMode === 'teacher' && <button onClick={() => updateQuestion(q.id, {pairs: [...(q.pairs||[]), {left: 'Baru', right: 'Baru'}]})} className="text-xs text-indigo-600 mt-2 font-bold flex items-center gap-1"><Plus size={14}/> Tambah Pasangan</button>}
+                          </div>
+                        </div>
+                      )}
+
                       {viewMode === 'teacher' ? (
-                        <div className="mt-4 pt-4 border-t border-slate-100"><label className="block text-xs font-bold text-slate-500 mb-1">Pembahasan (Opsional):</label><textarea value={q.explanation || ''} onChange={(e) => updateQuestion(q.id, {explanation: e.target.value})} className="w-full border border-amber-200 bg-amber-50/30 rounded-lg p-2 text-sm outline-none min-h-[60px]" placeholder="Tulis penjelasan..." /></div>
+                        <div className="mt-4 pt-4 border-t border-slate-100">
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Pembahasan (Muncul setelah siswa submit):</label>
+                          <textarea value={q.explanation || ''} onChange={(e) => updateQuestion(q.id, {explanation: e.target.value})} className="w-full border border-amber-200 bg-amber-50/30 rounded-lg p-2 text-sm outline-none min-h-[60px]" placeholder="Tulis penjelasan..." />
+                        </div>
                       ) : quizResults[item.id] !== undefined && (
                         <div className="mt-3">
-                           <div className={`p-2 text-sm rounded border ${studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>{studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer ? <><CheckCircle size={16} className="inline mr-1"/> Benar</> : <><X size={16} className="inline mr-1"/> Salah. Kunci: <b>{q.correctAnswer}</b></>}</div>
-                           {q.explanation && <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg"><p className="text-xs font-bold text-amber-800 mb-1">Pembahasan:</p><p className="text-sm text-amber-900">{q.explanation}</p></div>}
+                          {q.type !== 'essay' && (
+                             <div className={`p-2 text-sm rounded border ${ (q.type === 'multiple_choice' || q.type === 'true_false' ? (studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer) : true) ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                               {q.type === 'multiple_choice' || q.type === 'true_false' ? (studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer ? <><CheckCircle size={16} className="inline mr-1"/> Benar</> : <><X size={16} className="inline mr-1"/> Salah. Kunci: <b>{q.correctAnswer}</b></>) : <span>Lihat Kunci Jawaban / Review Manual</span>}
+                             </div>
+                          )}
+                          {q.explanation && <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg"><p className="text-xs font-bold text-amber-800 mb-1">Pembahasan:</p><p className="text-sm text-amber-900">{q.explanation}</p></div>}
                         </div>
                       )}
                     </div>
                   ))
                 )}
+
                 {viewMode === 'teacher' && (
                   <div className="flex flex-wrap gap-2 pt-4">
-                    {['multiple_choice', 'true_false'].map(type => (
-                      <button key={type} onClick={() => handleDataChange(item.id, { questions: [...questions, {id: generateId(), type, question: 'Soal baru', options: type==='multiple_choice'?['Opsi 1']:[], correctAnswer: ''}] })} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">+ {type.replace('_', ' ')}</button>
+                    {['multiple_choice', 'true_false', 'essay', 'matching'].map(type => (
+                      <button key={type} onClick={() => handleDataChange(item.id, { questions: [...questions, {id: generateId(), type, question: 'Soal baru', imageUrl: '', options: type==='multiple_choice'?['Opsi 1']:[], correctAnswer: '', explanation: '', pairs: type==='matching'?[{left:'Kiri', right:'Kanan'}]:[]}] })} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded text-sm font-medium">+ {type.replace('_', ' ')}</button>
                     ))}
                   </div>
                 )}
-                {viewMode === 'student' && quizResults[item.id] === undefined && questions.length > 0 && <button onClick={handleQuizSubmit} className="w-full py-3 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700">Submit Kuis</button>}
-                {viewMode === 'student' && quizResults[item.id] !== undefined && <div className="p-6 bg-green-50 border border-green-200 rounded-xl text-center"><h2 className="text-2xl font-bold text-green-700 mb-2">Nilai: {quizResults[item.id]}</h2></div>}
+
+                {viewMode === 'student' && quizResults[item.id] === undefined && questions.length > 0 && (
+                  <button onClick={handleQuizSubmit} className="w-full py-3 bg-indigo-600 text-white font-bold rounded-lg mt-6 shadow-md hover:bg-indigo-700">Submit Jawaban & Lihat Hasil</button>
+                )}
+
+                {viewMode === 'student' && quizResults[item.id] !== undefined && (
+                  <div className="p-6 bg-green-50 border border-green-200 rounded-xl text-center mt-6">
+                    <h2 className="text-2xl font-bold text-green-700 mb-2">Selesai!</h2>
+                    <div className="text-4xl font-extrabold text-indigo-700 bg-white inline-block px-6 py-4 rounded-full shadow-sm border-4 border-indigo-100">Nilai: {quizResults[item.id]}</div>
+                  </div>
+                )}
               </div>
             );
           };
@@ -493,9 +643,28 @@
                   </div>
                   <div className="p-8">
                     {loginError && <div className="mb-6 p-4 bg-red-50 text-red-600 text-sm font-medium rounded-lg border border-red-200 flex items-start gap-2"><X size={16} className="mt-0.5 shrink-0"/>{loginError}</div>}
-                    <form onSubmit={handleLogin} className="space-y-5">
-                      <div><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl p-4 text-center text-lg tracking-widest outline-none focus:border-indigo-500 transition-colors shadow-sm" placeholder="••••••••" required /></div>
-                      <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-4 rounded-xl shadow-md transition-colors mt-2 text-lg">Masuk</button>
+                    <form onSubmit={handleLogin} className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Username</label>
+                        <input 
+                          type="text" 
+                          value={username} 
+                          onChange={(e) => setUsername(e.target.value)} 
+                          className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" 
+                          required 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-slate-700 mb-1">Password</label>
+                        <input 
+                          type="password" 
+                          value={password} 
+                          onChange={(e) => setPassword(e.target.value)} 
+                          className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" 
+                          required 
+                        />
+                      </div>
+                      <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-4 rounded-xl shadow-md transition-colors mt-4 text-lg">Masuk</button>
                     </form>
                   </div>
                 </div>
@@ -506,7 +675,7 @@
           return (
             <div className="flex flex-col h-screen bg-white font-sans text-slate-800">
               
-              {/* Modal UI */}
+              {/* Dialog Modals */}
               {confirmModal.isOpen && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                   <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full"><h3 className="font-bold text-lg mb-2 text-slate-800">Konfirmasi</h3><p className="text-slate-600 mb-6">{confirmModal.message}</p><div className="flex justify-end gap-3"><button onClick={() => setConfirmModal({isOpen: false})} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-medium">Batal</button><button onClick={() => { confirmModal.onConfirm(); setConfirmModal({isOpen: false}); }} className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 shadow-sm">Ya, Lanjutkan</button></div></div>
@@ -520,11 +689,11 @@
                 </div>
               )}
 
-              {/* Header Navigasi */}
+              {/* Header Bar */}
               <header className="h-16 border-b border-slate-200 px-6 flex items-center justify-between bg-white shrink-0 shadow-sm z-10 print:hidden">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-inner"><BookOpen size={18} className="text-white" /></div>
-                  <h1 className="font-extrabold text-xl text-slate-800 tracking-tight">LUMINA Portal</h1>
+                  <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><BookOpen size={18} className="text-white" /></div>
+                  <h1 className="font-extrabold text-xl text-slate-800 tracking-tight">LUMINA Cloud</h1>
                 </div>
 
                 {viewMode === 'teacher' && (
@@ -536,68 +705,138 @@
                 )}
 
                 <div className="flex items-center gap-4">
-                  <div className="flex flex-col items-end"><span className="text-sm font-bold text-slate-700">{viewMode === 'teacher' ? 'Bapak/Ibu Guru' : 'Siswa Aktif'}</span><span className="text-xs text-slate-500">Mode: {viewMode}</span></div>
-                  <button onClick={handleLogout} className="ml-2 p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><LogOut size={20} /></button>
+                  <div className="flex flex-col items-end"><span className="text-sm font-bold text-slate-700">{viewMode === 'teacher' ? 'Bapak/Ibu Guru' : 'Siswa Aktif'}</span><span className="text-xs text-slate-500 capitalize flex items-center gap-1">Status: {db ? <span className="text-green-500 font-bold">Cloud Aktif</span> : <span className="text-yellow-500 font-bold">Lokal</span>}</span></div>
+                  <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><LogOut size={20} /></button>
                 </div>
               </header>
 
               <div className="flex flex-1 overflow-hidden print:h-auto print:overflow-visible">
                 
-                {/* Sidebar Kiri */}
+                {/* Sidebar Panel */}
                 {activeMainTab === 'curriculum' && (viewMode === 'teacher' || (viewMode === 'student' && activeStudentCourseId)) && (
                   <aside className="w-80 border-r border-slate-200 flex flex-col bg-white shrink-0 shadow-sm print:hidden">
                     <div className="p-4 border-b border-slate-100 flex flex-col gap-3 bg-slate-50">
-                      <div className="flex justify-between items-center"><h2 className="font-bold text-slate-700 text-sm">{viewMode === 'student' ? 'Materi Kursus' : 'Struktur Pembelajaran'}</h2>{viewMode === 'teacher' && <button onClick={handleAddCourse} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-md font-bold flex items-center gap-1 text-xs"><Plus size={14} /> Kursus Baru</button>}</div>
+                      <div className="flex justify-between items-center">
+                        <h2 className="font-bold text-slate-700 text-sm">{viewMode === 'student' ? 'Materi Kursus' : 'Daftar Kursus Cloud'}</h2>
+                        {viewMode === 'teacher' && <button onClick={handleAddCourse} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-md font-bold flex items-center gap-1 text-xs"><Plus size={14} /> Kursus</button>}
+                      </div>
                       {viewMode === 'student' && <button onClick={() => { setActiveStudentCourseId(null); setActiveItemId(null); }} className="w-full px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center justify-center gap-2"><ChevronDown size={14} className="rotate-90 text-slate-400" /> Ke Beranda</button>}
                     </div>
-                    <div className="flex-1 overflow-y-auto p-3">{renderTree(viewMode === 'teacher' ? data : data.filter(c => c.id === activeStudentCourseId))}</div>
+                    <div className="flex-1 overflow-y-auto p-3">
+                      {renderTree(viewMode === 'teacher' ? data : data.filter(c => c.id === activeStudentCourseId))}
+                    </div>
                   </aside>
                 )}
 
-                {/* Konten Utama */}
+                {/* Content Panel */}
                 <main className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-8 relative print:p-0 print:bg-white print:overflow-visible">
                   
                   {activeMainTab === 'grades' && viewMode === 'teacher' ? (
                     <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:border-none print:shadow-none">
-                      <div className="p-6 border-b border-slate-200 flex justify-between bg-slate-50 print:bg-white print:p-0 print:mb-6"><h2 className="text-xl font-bold flex items-center gap-2"><Award className="print:hidden"/> Rekap Nilai Siswa</h2><div className="flex gap-2 print:hidden"><button onClick={handleExportExcel} className="px-3 py-2 bg-emerald-100 text-emerald-700 font-bold rounded-lg flex gap-2"><FileSpreadsheet size={16} /> Excel</button><button onClick={handlePrint} className="px-3 py-2 bg-slate-800 text-white font-bold rounded-lg flex gap-2"><Printer size={16} /> PDF</button></div></div>
-                      <table className="w-full text-left border-collapse"><thead><tr className="bg-slate-100 text-slate-600 text-sm border-b"><th className="p-4">Nama Siswa</th><th className="p-4">NIS</th><th className="p-4">Kuis</th><th className="p-4">Nilai</th><th className="p-4 print:hidden">Aksi</th></tr></thead><tbody>{submissions.map((sub) => (<tr key={sub.id} className="border-b hover:bg-slate-50"><td className="p-4 font-medium">{sub.studentName}</td><td className="p-4">{sub.nis}</td><td className="p-4">{sub.quizTitle}</td><td className="p-4"><span className={`font-bold px-2 py-1 rounded text-sm ${sub.score >= 70 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'}`}>{sub.score}</span></td><td className="p-4 print:hidden"><button onClick={() => showConfirm("Hapus nilai?", () => setSubmissions(submissions.filter(s => s.id !== sub.id)))} className="text-red-400"><Trash2 size={16}/></button></td></tr>))}</tbody></table>
+                      <div className="p-6 border-b border-slate-200 flex justify-between bg-slate-50 print:bg-white print:p-0 print:mb-6">
+                         <div><h2 className="text-xl font-bold flex items-center gap-2"><Award className="print:hidden"/> Rekap Nilai Kuis Siswa</h2></div>
+                         <div className="flex gap-2 print:hidden">
+                           <button onClick={handleExportExcel} className="px-3 py-2 bg-emerald-100 text-emerald-700 font-bold rounded-lg flex gap-2"><FileSpreadsheet size={16} /> Excel</button>
+                           <button onClick={handlePrint} className="px-3 py-2 bg-slate-800 text-white font-bold rounded-lg flex gap-2"><Printer size={16} /> PDF</button>
+                         </div>
+                      </div>
+                      <table className="w-full text-left border-collapse">
+                        <thead><tr className="bg-slate-100 text-slate-600 text-sm border-b print:bg-slate-50"><th className="p-4">Nama Siswa</th><th className="p-4">NIS</th><th className="p-4">Judul Kuis</th><th className="p-4">Nilai</th><th className="p-4 print:hidden">Aksi</th></tr></thead>
+                        <tbody>
+                          {submissions.map((sub) => (
+                            <tr key={sub.id} className="border-b hover:bg-slate-50"><td className="p-4 font-medium">{sub.studentName}</td><td className="p-4 text-slate-500">{sub.nis}</td><td className="p-4 text-slate-700">{sub.quizTitle}</td><td className="p-4"><span className={`font-bold px-2 py-1 rounded text-sm ${sub.score >= 70 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'}`}>{sub.score}</span></td><td className="p-4 print:hidden"><button onClick={() => showConfirm("Hapus nilai dari Cloud?", () => handleSetSubmissions(submissions.filter(s => s.id !== sub.id)))} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>
+                          ))}
+                          {submissions.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-500">Belum ada data.</td></tr>}
+                        </tbody>
+                      </table>
                     </div>
+
                   ) : activeMainTab === 'students' && viewMode === 'teacher' ? (
                      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                      <div className="p-6 border-b flex justify-between bg-slate-50"><h2 className="text-xl font-bold">Data Siswa</h2><div className="flex gap-2"><button onClick={() => setStudentFormMode('manual')} className="px-3 py-2 bg-white border font-bold rounded-lg flex gap-2"><Plus size={16} /> Manual</button><button onClick={() => setStudentFormMode('mass')} className="px-3 py-2 bg-emerald-100 text-emerald-700 font-bold rounded-lg flex gap-2"><FileUp size={16} /> Impor</button></div></div>
-                      {studentFormMode === 'manual' && (<form onSubmit={(e) => { e.preventDefault(); setStudents([...students, {id: generateId(), name: manualForm.name, nis: manualForm.nis}]); setManualForm({name:'', nis:''}); }} className="p-4 bg-indigo-50 border-b flex gap-3 items-end"><div className="flex-1"><label className="block text-xs font-bold mb-1">Nama</label><input type="text" value={manualForm.name} onChange={e => setManualForm({...manualForm, name: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div><div className="flex-1"><label className="block text-xs font-bold mb-1">NIS</label><input type="text" value={manualForm.nis} onChange={e => setManualForm({...manualForm, nis: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div><button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded text-sm h-[38px]">Simpan</button></form>)}
-                      {studentFormMode === 'mass' && (<div className="p-4 bg-emerald-50 border-b"><textarea value={massForm} onChange={e => setMassForm(e.target.value)} className="w-full h-32 border rounded-lg p-3 text-sm font-mono mb-2" placeholder="Nama, NIS&#10;Budi, 1001"/><div className="flex justify-end gap-2"><button onClick={() => setStudentFormMode(null)} className="px-4 py-2 text-emerald-700 font-bold rounded text-sm">Batal</button><button onClick={handleMassImportSubmit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded text-sm">Proses Impor</button></div></div>)}
-                      <table className="w-full text-left border-collapse"><thead><tr className="bg-slate-100 border-b"><th className="p-4">Nama Siswa</th><th className="p-4">NIS</th><th className="p-4">Aksi</th></tr></thead><tbody>{students.map(st => (<tr key={st.id} className="border-b"><td className="p-4">{st.name}</td><td className="p-4">{st.nis}</td><td className="p-4"><button onClick={() => setStudents(students.filter(s=>s.id!==st.id))} className="text-red-400"><Trash2 size={16}/></button></td></tr>))}</tbody></table>
+                      <div className="p-6 border-b flex justify-between bg-slate-50">
+                         <h2 className="text-xl font-bold">Data Siswa Cloud</h2>
+                         <div className="flex gap-2">
+                           <button onClick={() => setStudentFormMode('manual')} className="px-3 py-2 bg-white border font-bold rounded-lg flex gap-2"><Plus size={16} /> Manual</button>
+                           <button onClick={() => setStudentFormMode('mass')} className="px-3 py-2 bg-emerald-100 text-emerald-700 font-bold rounded-lg flex gap-2"><FileUp size={16} /> Impor</button>
+                         </div>
+                      </div>
+                      {studentFormMode === 'manual' && (
+                        <form onSubmit={handleAddManualStudent} className="p-4 bg-indigo-50 border-b flex gap-3 items-end">
+                          <div className="flex-1"><label className="block text-xs font-bold mb-1">Nama</label><input type="text" value={manualForm.name} onChange={(e) => setManualForm({...manualForm, name: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
+                          <div className="flex-1"><label className="block text-xs font-bold mb-1">NIS</label><input type="text" value={manualForm.nis} onChange={(e) => setManualForm({...manualForm, nis: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
+                          <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded text-sm h-[38px]">Simpan</button>
+                          <button type="button" onClick={() => setStudentFormMode(null)} className="px-3 py-2 text-indigo-600 font-bold rounded text-sm h-[38px]">Batal</button>
+                        </form>
+                      )}
+                      {studentFormMode === 'mass' && (
+                        <div className="p-4 bg-emerald-50 border-b"><textarea value={massForm} onChange={(e) => setMassForm(e.target.value)} className="w-full h-32 border rounded-lg p-3 text-sm font-mono mb-2" placeholder="Nama, NIS&#10;Budi, 1001"/><div className="flex justify-end gap-2"><button onClick={() => setStudentFormMode(null)} className="px-4 py-2 text-emerald-700 font-bold rounded text-sm">Batal</button><button onClick={handleMassImportSubmit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded text-sm">Proses Impor ke Cloud</button></div></div>
+                      )}
+                      <table className="w-full text-left border-collapse">
+                        <thead><tr className="bg-slate-100 border-b"><th className="p-4">Nama Siswa</th><th className="p-4">NIS</th><th className="p-4 print:hidden">Aksi</th></tr></thead>
+                        <tbody>
+                          {students.map((st) => (
+                            <tr key={st.id} className="border-b hover:bg-slate-50"><td className="p-4 font-medium text-slate-800">{st.name}</td><td className="p-4 text-slate-500">{st.nis}</td><td className="p-4 print:hidden"><button onClick={() => showConfirm("Hapus dari Cloud?", () => handleSetStudents(students.filter(s => s.id !== st.id)))} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
+
                   ) : viewMode === 'student' && !activeStudentCourseId ? (
                     <div className="max-w-6xl mx-auto p-2 md:p-6 animate-fade-in">
-                      <div className="mb-10 bg-gradient-to-r from-indigo-700 to-blue-500 rounded-3xl p-8 md:p-12 text-white shadow-lg"><h1 className="text-3xl md:text-5xl font-extrabold mb-4">Selamat Datang!</h1><p className="text-indigo-100 text-lg">Pilih kursus di bawah ini untuk melihat materi dan kuis.</p></div>
+                      <div className="mb-10 bg-gradient-to-r from-indigo-700 to-blue-500 rounded-3xl p-8 md:p-12 text-white shadow-lg relative overflow-hidden">
+                        <div className="relative z-10"><h1 className="text-3xl md:text-5xl font-extrabold mb-4">Selamat Datang!</h1><p className="text-indigo-100 text-lg max-w-2xl">Lanjutkan proses belajarmu dari Cloud secara real-time.</p></div>
+                      </div>
                       <h2 className="text-2xl font-extrabold text-slate-800 mb-6 flex items-center gap-2"><Library size={24} className="text-indigo-600"/> Kursus Tersedia</h2>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {data.filter(c => c.type === 'course').map(course => (
-                          <div key={course.id} onClick={() => { if(course.isLocked) return showConfirm('Kursus dikunci oleh Guru.', ()=>{}); setActiveStudentCourseId(course.id); setActiveItemId(null); }} className={`bg-white rounded-2xl shadow-sm border p-6 flex flex-col group ${course.isLocked ? 'opacity-80 cursor-not-allowed grayscale-[20%]' : 'cursor-pointer hover:shadow-xl hover:border-indigo-400 transform hover:-translate-y-1.5'}`}><div className="flex justify-between items-start mb-5"><div className={`w-14 h-14 rounded-xl flex items-center justify-center ${course.isLocked ? 'bg-slate-100' : 'bg-indigo-50 text-indigo-600'}`}>{course.isLocked ? <Lock size={28}/> : <Library size={28}/>}</div>{course.isLocked && <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-md border flex items-center gap-1"><Lock size={12}/> Terkunci</span>}</div><h3 className={`text-xl font-bold mb-2 flex-1 ${course.isLocked ? 'text-slate-500' : 'text-slate-800 group-hover:text-indigo-700'}`}>{course.title}</h3></div>
-                        ))}
+                        {data.filter(c => c.type === 'course').map(course => {
+                          const actionables = getFlatActionableItems([course]);
+                          const totalItems = actionables.length;
+                          const completedCount = actionables.filter(item => completedItems.includes(item.id)).length;
+                          const progress = totalItems === 0 ? 0 : Math.round((completedCount / totalItems) * 100);
+                          
+                          return (
+                            <div key={course.id} onClick={() => { if (course.isLocked) return showConfirm('Kursus dikunci oleh Guru.', ()=>{}); setActiveStudentCourseId(course.id); setActiveItemId(null); }} className={`bg-white rounded-2xl shadow-sm border p-6 flex flex-col group ${course.isLocked ? 'opacity-80 cursor-not-allowed grayscale-[20%]' : 'cursor-pointer hover:shadow-xl hover:border-indigo-400 transform hover:-translate-y-1.5 transition-all'}`}>
+                              <div className="flex justify-between items-start mb-5"><div className={`w-14 h-14 rounded-xl flex items-center justify-center ${course.isLocked ? 'bg-slate-100 text-slate-400' : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}>{course.isLocked ? <Lock size={28} /> : <Library size={28} />}</div>{course.isLocked && <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-md border flex items-center gap-1"><Lock size={12}/> Terkunci</span>}</div>
+                              <h3 className={`text-xl font-bold mb-2 flex-1 ${course.isLocked ? 'text-slate-500' : 'text-slate-800 group-hover:text-indigo-700'}`}>{course.title}</h3>
+                              <div className="mt-4 pt-4 border-t border-slate-100"><div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden"><div className="bg-indigo-600 h-2.5 rounded-full" style={{width: `${progress}%`}}></div></div></div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
+
                   ) : !activeItem ? (
-                     <div className="h-full flex flex-col items-center justify-center text-slate-400"><Library size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium text-slate-500 mb-6">Pilih konten dari sidebar di sebelah kiri</p></div>
+                     <div className="h-full flex flex-col items-center justify-center text-slate-400"><Library size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium text-slate-500 mb-6">Pilih konten dari menu di sebelah kiri</p></div>
+
                   ) : (activeItem && isItemLocked(activeItem.id) && viewMode === 'student') ? (
-                     <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-white rounded-3xl border shadow-sm p-8 text-center max-w-md mx-auto my-auto"><Lock size={64} className="mb-4 text-slate-300" /><h2 className="text-xl font-bold text-slate-700 mb-2">Materi Terkunci</h2><p className="text-sm text-slate-500">Selesaikan materi sebelumnya terlebih dahulu.</p></div>
+                     <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-white rounded-3xl border border-slate-200 shadow-sm p-8 text-center max-w-md mx-auto my-auto"><Lock size={64} className="mb-4 text-slate-300" /><h2 className="text-xl font-bold text-slate-700 mb-2">Materi Terkunci</h2><p className="text-sm text-slate-500">Selesaikan materi sebelumnya terlebih dahulu.</p></div>
+
                   ) : (
                     <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-10 min-h-full relative">
-                        {viewMode === 'teacher' && <button onClick={() => handleDeleteItem(activeItem.id)} className="absolute top-6 right-6 p-2 text-red-400 hover:text-red-600 bg-red-50 rounded-lg text-sm font-medium"><Trash2 size={16} /></button>}
-                        {viewMode === 'teacher' ? <input type="text" value={activeItem.title} onChange={(e) => handleDataChange(activeItem.id, { title: e.target.value })} className="text-2xl md:text-3xl font-bold text-slate-800 w-full mb-2 outline-none border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500" placeholder="Judul..." /> : <h1 className="text-2xl md:text-3xl font-bold text-slate-800 mb-2 pr-10">{activeItem.title}</h1>}
+                        {viewMode === 'teacher' && (
+                          <button onClick={() => handleDeleteItem(activeItem.id)} className="absolute top-6 right-6 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"><Trash2 size={16} /> <span className="hidden md:inline">Hapus dari Cloud</span></button>
+                        )}
+
+                        {viewMode === 'teacher' ? (
+                          <input type="text" value={activeItem.title} onChange={(e) => handleDataChange(activeItem.id, { title: e.target.value })} className="text-2xl md:text-3xl font-bold text-slate-800 w-full mb-2 outline-none border-b-2 border-transparent hover:border-slate-200 focus:border-indigo-500 transition-colors py-1 pr-32" placeholder="Judul Materi..." />
+                        ) : <h1 className="text-2xl md:text-3xl font-bold text-slate-800 mb-2 pr-10">{activeItem.title}</h1>}
                         
                         <div className="flex items-center gap-3 mt-4 flex-wrap mb-8">
-                          <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-md text-xs font-bold uppercase">{activeItem.type}</span>
-                          {viewMode === 'teacher' && activeItem.type === 'course' && <button onClick={() => handleDataChange(activeItem.id, { isLocked: !activeItem.isLocked })} className={`px-3 py-1.5 rounded-md text-xs font-bold flex gap-1 ${activeItem.isLocked ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>{activeItem.isLocked ? <><Lock size={14}/> Terkunci (Siswa)</> : <><Unlock size={14}/> Terbuka (Siswa)</>}</button>}
-                          {viewMode === 'teacher' && !['course', 'module', 'folder'].includes(activeItem.type) && <select value={activeItem.type} onChange={(e) => handleDataChange(activeItem.id, { type: e.target.value })} className="text-xs font-bold border rounded-md px-2 py-1 outline-none"><option value="text">Ubah ke: Teks</option><option value="video">Ubah ke: Video</option><option value="document">Ubah ke: Dokumen</option><option value="quiz">Ubah ke: Kuis</option></select>}
-                          {completedItems.includes(activeItem.id) && <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 uppercase bg-emerald-50 px-3 py-1 rounded-md"><CheckCircle size={14} /> Selesai</span>}
+                          <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-md text-xs font-bold uppercase tracking-wider">{activeItem.type}</span>
+                          {viewMode === 'teacher' && activeItem.type === 'course' && (
+                             <button onClick={() => handleDataChange(activeItem.id, { isLocked: !activeItem.isLocked })} className={`px-3 py-1.5 rounded-md text-xs font-bold flex gap-1 ${activeItem.isLocked ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>{activeItem.isLocked ? <><Lock size={14}/> Terkunci (Siswa)</> : <><Unlock size={14}/> Terbuka (Siswa)</>}</button>
+                          )}
+                          {viewMode === 'teacher' && !['course', 'module', 'folder'].includes(activeItem.type) && (
+                            <select value={activeItem.type} onChange={(e) => handleDataChange(activeItem.id, { type: e.target.value })} className="text-xs font-bold border rounded-md px-2 py-1 outline-none">
+                              <option value="text">Ubah ke: Teks</option><option value="video">Ubah ke: Video</option><option value="document">Ubah ke: Dokumen</option><option value="quiz">Ubah ke: Kuis</option>
+                            </select>
+                          )}
+                          {completedItems.includes(activeItem.id) && <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 uppercase tracking-wider bg-emerald-50 px-3 py-1 rounded-md"><CheckCircle size={14} /> Selesai</span>}
                         </div>
 
                         {viewMode === 'teacher' && ['course', 'module', 'folder'].includes(activeItem.type) && (
                           <div className="mb-8 p-4 bg-slate-50 border border-slate-200 rounded-xl border-dashed">
-                             <p className="text-sm font-bold text-slate-500 mb-3">Tambahkan Konten Baru:</p>
+                             <p className="text-sm font-bold text-slate-500 mb-3">Tambahkan Konten ke Cloud:</p>
                              <div className="flex flex-wrap gap-2">
                                 {activeItem.type === 'course' && <button onClick={() => handleAddItem(activeItem.id, 'module')} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-bold flex gap-1"><BookOpen size={16}/> + Modul Baru</button>}
                                 {activeItem.type !== 'course' && (
@@ -615,7 +854,7 @@
                         {['text', 'document', 'folder', 'module', 'course'].includes(activeItem.type) && (
                           <div className="space-y-4 mt-6">
                             <div className="flex justify-between items-end mb-2">
-                              <label className="block text-sm font-bold text-slate-700">{activeItem.type === 'text' ? 'Konten Artikel' : 'Deskripsi'}</label>
+                              <label className="block text-sm font-bold text-slate-700">{activeItem.type === 'text' ? 'Konten Artikel' : 'Deskripsi Pengantar'}</label>
                               {viewMode === 'teacher' && (
                                 <div className="flex gap-2">
                                    <button onClick={() => showPrompt("URL Gambar", "https://contoh.com/gambar.jpg", "text", (url) => { if(url) handleDataChange(activeItem.id, { content: (activeItem.content || '') + `\n<img src="${url}" alt="gambar" class="max-w-full h-auto rounded-lg my-4 shadow-sm" />\n` }); })} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded font-medium flex items-center gap-1"><ImageIcon size={12}/> + Gambar</button>
@@ -658,7 +897,7 @@
 
                         {viewMode === 'student' && ['text', 'video', 'document'].includes(activeItem.type) && (
                           <div className="mt-12 pt-6 border-t border-slate-200 flex justify-end">
-                            <button onClick={() => { if(!completedItems.includes(activeItem.id)) setCompletedItems([...completedItems, activeItem.id]); }} disabled={completedItems.includes(activeItem.id)} className={`px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-md ${completedItems.includes(activeItem.id) ? 'bg-emerald-100 text-emerald-700 shadow-none' : 'bg-indigo-600 hover:bg-indigo-700 text-white transform hover:-translate-y-0.5'}`}>
+                            <button onClick={() => { if(!completedItems.includes(activeItem.id)) handleUpdateProgress({completedItems: [...completedItems, activeItem.id]}) }} disabled={completedItems.includes(activeItem.id)} className={`px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-md ${completedItems.includes(activeItem.id) ? 'bg-emerald-100 text-emerald-700 shadow-none' : 'bg-indigo-600 hover:bg-indigo-700 text-white transform hover:-translate-y-0.5'}`}>
                               {completedItems.includes(activeItem.id) ? <><CheckCircle size={20} /> Selesai Dibaca</> : <><Check size={20} /> Tandai Selesai & Lanjut</>}
                             </button>
                           </div>
@@ -671,9 +910,6 @@
           );
         }
 
-        // =====================================================================
-        // RENDER KE HALAMAN (TIDAK PERLU DIUBAH)
-        // =====================================================================
         const root = createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
