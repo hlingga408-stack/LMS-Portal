@@ -5,14 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LUMINA - Nyalakan Nalar, Raih Masa Depan</title>
     
-    <!-- Memuat Mesin Desain (Tailwind) Otomatis -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- Memuat Penerjemah React Otomatis -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
-        /* Gaya khusus untuk merapikan saat dicetak (PDF) */
+        /* Gaya khusus untuk PDF / Print */
         @media print {
             .print\:hidden { display: none !important; }
             .print\:m-0 { margin: 0 !important; }
@@ -22,9 +19,7 @@
             .print\:text-black { color: #000 !important; }
             body { background-color: white !important; }
         }
-        .animate-fade-in {
-            animation: fadeIn 0.5s ease-out forwards;
-        }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -33,7 +28,6 @@
 </head>
 <body class="bg-slate-50 font-sans text-slate-800 h-screen overflow-hidden">
     
-    <!-- Di sinilah Aplikasi LUMINA akan ditampilkan -->
     <div id="root" class="h-full"></div>
 
     <!-- SCRIPT UTAMA APLIKASI (REACT) -->
@@ -52,15 +46,35 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const app = firebaseConfig && Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
+        // =========================================================================
+        // 🔴🔴🔴 PENTING: ISI DATABASE FIREBASE ANDA DI BAWAH INI 🔴🔴🔴
+        // =========================================================================
+        // Masukkan API Key dan detail Firebase Anda ke dalam kurung kurawal di bawah ini.
+        // Jika Anda membiarkannya kosong, aplikasi akan berjalan offline (data tidak tersimpan).
+        const myFirebaseConfig = {
+            apiKey: "AIzaSyAO8Pj2d7Wt8X6mfrLudZEIZxV4CTziXUI",
+  authDomain: "lumina-lms-4e451.firebaseapp.com",
+  projectId: "lumina-lms-4e451",
+  storageBucket: "lumina-lms-4e451.firebasestorage.app",
+  messagingSenderId: "443356880708",
+  appId: "1:443356880708:web:f3b37a1aeb9cfc57f70111",
+  measurementId: "G-KWXHYGY23F"
+
+        };
+        // =========================================================================
+
+        let finalFirebaseConfig = null;
+        if (typeof __firebase_config !== 'undefined' && Object.keys(JSON.parse(__firebase_config)).length > 0) {
+            finalFirebaseConfig = JSON.parse(__firebase_config);
+        } else if (myFirebaseConfig.apiKey) {
+            finalFirebaseConfig = myFirebaseConfig;
+        }
+
+        const app = finalFirebaseConfig ? initializeApp(finalFirebaseConfig) : null;
         const auth = app ? getAuth(app) : null;
         const db = app ? getFirestore(app) : null;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'lumina-lms-online';
+        const appId = 'lumina-online-db'; // ID Cloud Statis agar selalu terhubung
 
-        // =====================================================================
-        // DATA AWAL / DEMO FALLBACK (Jika Cloud belum tersambung)
-        // =====================================================================
         const INITIAL_DATA = [
           {
             id: 'c1', type: 'course', title: 'Kursus 1: Pemrograman Web', isOpen: true, isLocked: false,
@@ -80,12 +94,12 @@
         ];
 
         const INITIAL_STUDENTS = [
-          { id: 's1', name: 'Budi Santoso', nis: '1001', progress: 45 },
-          { id: 's2', name: 'Siti Aminah', nis: '1002', progress: 80 }
+          { id: 's1', name: 'Siswa Demo', nis: '1234', progress: 0 }
         ];
 
         function App() {
           const [firebaseUser, setFirebaseUser] = useState(null);
+          
           const [isLoggedIn, setIsLoggedIn] = useState(false);
           const [username, setUsername] = useState('');
           const [password, setPassword] = useState('');
@@ -93,6 +107,7 @@
 
           const [viewMode, setViewMode] = useState('teacher'); 
           const [activeMainTab, setActiveMainTab] = useState('curriculum'); 
+          const [studentSession, setStudentSession] = useState(null); // Menyimpan Info Siswa Login
           
           const [data, setData] = useState(INITIAL_DATA);
           const [students, setStudents] = useState(INITIAL_STUDENTS);
@@ -131,33 +146,37 @@
           useEffect(() => {
             if (!firebaseUser || !db) return;
             
+            // Listener Data Publik (Guru & Siswa)
             const unsubData = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'curriculum'), (docSnap) => {
               if (docSnap.exists()) setData(docSnap.data().tree || []);
               else handleSetData(INITIAL_DATA);
-            }, (err) => console.error("Data Listener Error:", err));
+            });
 
             const unsubStudents = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'students'), (docSnap) => {
               if (docSnap.exists()) setStudents(docSnap.data().list || []);
               else handleSetStudents(INITIAL_STUDENTS);
-            }, (err) => console.error("Students Listener Error:", err));
+            });
 
             const unsubSubmissions = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'submissions'), (docSnap) => {
               if (docSnap.exists()) setSubmissions(docSnap.data().list || []);
-            }, (err) => console.error("Submissions Listener Error:", err));
+            });
 
-            const unsubProgress = onSnapshot(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'lumina_progress', 'state'), (docSnap) => {
+            // Listener Data Privat Progress (Siswa / Guru)
+            // Menggunakan NIS sebagai identifier progress di database agar stabil
+            const activeUserId = (viewMode === 'student' && studentSession) ? studentSession.nis : firebaseUser.uid;
+            
+            const unsubProgress = onSnapshot(doc(db, 'artifacts', appId, 'users', activeUserId, 'lumina_progress', 'state'), (docSnap) => {
               if (docSnap.exists()) {
                 const d = docSnap.data();
                 setCompletedItems(d.completedItems || []);
                 setStudentAnswers(d.studentAnswers || {});
                 setQuizResults(d.quizResults || {});
               }
-            }, (err) => console.error("Progress Listener Error:", err));
+            });
 
             return () => { unsubData(); unsubStudents(); unsubSubmissions(); unsubProgress(); };
-          }, [firebaseUser]);
+          }, [firebaseUser, viewMode, studentSession]);
 
-          // Optimistic UI Savers
           const handleSetData = (newData) => {
             setData(newData);
             if (firebaseUser && db) setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'curriculum'), { tree: newData });
@@ -175,12 +194,11 @@
             const nextAnswers = partialUpdate.studentAnswers !== undefined ? partialUpdate.studentAnswers : studentAnswers;
             const nextResults = partialUpdate.quizResults !== undefined ? partialUpdate.quizResults : quizResults;
             
-            if (partialUpdate.completedItems) setCompletedItems(nextCompleted);
-            if (partialUpdate.studentAnswers) setStudentAnswers(nextAnswers);
-            if (partialUpdate.quizResults) setQuizResults(nextResults);
+            setCompletedItems(nextCompleted); setStudentAnswers(nextAnswers); setQuizResults(nextResults);
 
             if (firebaseUser && db) {
-              setDoc(doc(db, 'artifacts', appId, 'users', firebaseUser.uid, 'lumina_progress', 'state'), {
+              const activeUserId = (viewMode === 'student' && studentSession) ? studentSession.nis : firebaseUser.uid;
+              setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'lumina_progress', 'state'), {
                 completedItems: nextCompleted, studentAnswers: nextAnswers, quizResults: nextResults
               }, { merge: true });
             }
@@ -189,24 +207,40 @@
           const handleLogin = (e) => {
             e.preventDefault();
             if (username === 'guru' && password === '19882026') {
+              // Login Guru
               setIsLoggedIn(true);
               setViewMode('teacher');
               setActiveMainTab('curriculum');
               setLoginError('');
-            } else if (username === 'siswa' && password === 'siswa123') {
-              setIsLoggedIn(true);
-              setViewMode('student');
-              setActiveStudentCourseId(null);
-              setActiveMainTab('curriculum');
-              setLoginError('');
             } else {
-              setLoginError('Kredensial yang Anda masukkan salah!');
+              // Login Siswa: Verifikasi Username=NIS, Password=NIS dari database siswa
+              const matchedStudent = students.find(s => s.nis === username && s.nis === password);
+              
+              if (matchedStudent) {
+                setStudentSession(matchedStudent);
+                setIsLoggedIn(true);
+                setViewMode('student');
+                setActiveStudentCourseId(null);
+                setActiveMainTab('curriculum');
+                setLoginError('');
+              } else if (username === 'siswa' && password === 'siswa123') {
+                // Fallback / Demo jika belum ada siswa di database
+                setStudentSession({ name: 'Siswa Demo', nis: '9999' });
+                setIsLoggedIn(true);
+                setViewMode('student');
+                setActiveStudentCourseId(null);
+                setActiveMainTab('curriculum');
+                setLoginError('');
+              } else {
+                setLoginError('Kredensial salah! Gunakan NIS Anda untuk Username dan Password.');
+              }
             }
           };
 
           const handleLogout = () => {
             setIsLoggedIn(false); setUsername(''); setPassword('');
-            setActiveItemId(null); setActiveStudentCourseId(null);
+            setActiveItemId(null); setActiveStudentCourseId(null); setStudentSession(null);
+            setCompletedItems([]); setStudentAnswers({}); setQuizResults({});
           };
 
           const showConfirm = (message, onConfirm) => setConfirmModal({ isOpen: true, message, onConfirm });
@@ -453,8 +487,11 @@
                   completedItems: [...completedItems, item.id]
                });
 
+               const studentName = studentSession ? studentSession.name : 'Siswa Demo';
+               const studentNis = studentSession ? studentSession.nis : 'Demo';
+
                handleSetSubmissions([...submissions, {
-                  id: generateId(), studentName: 'Siswa Aktif', nis: 'ID-' + (firebaseUser?.uid?.substring(0,4) || '9999'), quizTitle: item.title, score: finalScore
+                  id: generateId(), studentName: studentName, nis: studentNis, quizTitle: item.title, score: finalScore
                }]);
             };
 
@@ -633,7 +670,7 @@
 
           if (!isLoggedIn) {
             return (
-              <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4">
+              <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4 relative">
                 <div className="w-full max-w-md bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
                   <div className="bg-gradient-to-br from-indigo-700 to-blue-600 p-10 text-center relative overflow-hidden">
                     <div className="absolute inset-0 bg-indigo-900 opacity-20 blur-2xl rounded-full scale-150 -translate-y-10"></div>
@@ -643,11 +680,14 @@
                   </div>
                   <div className="p-8">
                     {loginError && <div className="mb-6 p-4 bg-red-50 text-red-600 text-sm font-medium rounded-lg border border-red-200 flex items-start gap-2"><X size={16} className="mt-0.5 shrink-0"/>{loginError}</div>}
+                    
+                    <p className="text-sm font-semibold text-slate-500 mb-4 text-center">LOGIN SISWA: Gunakan NIS Anda sebagai Username dan Password.</p>
+                    
                     <form onSubmit={handleLogin} className="space-y-4">
                       <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1">Username</label>
                         <input 
                           type="text" 
+                          placeholder="Username (atau NIS)"
                           value={username} 
                           onChange={(e) => setUsername(e.target.value)} 
                           className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" 
@@ -655,9 +695,9 @@
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-bold text-slate-700 mb-1">Password</label>
                         <input 
                           type="password" 
+                          placeholder="Password (atau NIS)"
                           value={password} 
                           onChange={(e) => setPassword(e.target.value)} 
                           className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" 
@@ -675,7 +715,6 @@
           return (
             <div className="flex flex-col h-screen bg-white font-sans text-slate-800">
               
-              {/* Dialog Modals */}
               {confirmModal.isOpen && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                   <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full"><h3 className="font-bold text-lg mb-2 text-slate-800">Konfirmasi</h3><p className="text-slate-600 mb-6">{confirmModal.message}</p><div className="flex justify-end gap-3"><button onClick={() => setConfirmModal({isOpen: false})} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-medium">Batal</button><button onClick={() => { confirmModal.onConfirm(); setConfirmModal({isOpen: false}); }} className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 shadow-sm">Ya, Lanjutkan</button></div></div>
@@ -689,11 +728,10 @@
                 </div>
               )}
 
-              {/* Header Bar */}
               <header className="h-16 border-b border-slate-200 px-6 flex items-center justify-between bg-white shrink-0 shadow-sm z-10 print:hidden">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><BookOpen size={18} className="text-white" /></div>
-                  <h1 className="font-extrabold text-xl text-slate-800 tracking-tight">LUMINA Cloud</h1>
+                  <h1 className="font-extrabold text-xl text-slate-800 tracking-tight">LUMINA</h1>
                 </div>
 
                 {viewMode === 'teacher' && (
@@ -705,22 +743,24 @@
                 )}
 
                 <div className="flex items-center gap-4">
-                  <div className="flex flex-col items-end"><span className="text-sm font-bold text-slate-700">{viewMode === 'teacher' ? 'Bapak/Ibu Guru' : 'Siswa Aktif'}</span><span className="text-xs text-slate-500 capitalize flex items-center gap-1">Status: {db ? <span className="text-green-500 font-bold">Cloud Aktif</span> : <span className="text-yellow-500 font-bold">Lokal</span>}</span></div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-sm font-bold text-slate-700">{viewMode === 'teacher' ? 'Bapak/Ibu Guru' : (studentSession ? studentSession.name : 'Siswa')}</span>
+                    <span className="text-xs text-slate-500 capitalize flex items-center gap-1">Status: {db ? <span className="text-green-500 font-bold">Cloud Online</span> : <span className="text-yellow-500 font-bold">Offline (Lokal)</span>}</span>
+                  </div>
                   <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><LogOut size={20} /></button>
                 </div>
               </header>
 
               <div className="flex flex-1 overflow-hidden print:h-auto print:overflow-visible">
                 
-                {/* Sidebar Panel */}
                 {activeMainTab === 'curriculum' && (viewMode === 'teacher' || (viewMode === 'student' && activeStudentCourseId)) && (
                   <aside className="w-80 border-r border-slate-200 flex flex-col bg-white shrink-0 shadow-sm print:hidden">
                     <div className="p-4 border-b border-slate-100 flex flex-col gap-3 bg-slate-50">
                       <div className="flex justify-between items-center">
-                        <h2 className="font-bold text-slate-700 text-sm">{viewMode === 'student' ? 'Materi Kursus' : 'Daftar Kursus Cloud'}</h2>
+                        <h2 className="font-bold text-slate-700 text-sm">{viewMode === 'student' ? 'Materi Kursus' : 'Daftar Kursus'}</h2>
                         {viewMode === 'teacher' && <button onClick={handleAddCourse} className="px-3 py-1.5 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-md font-bold flex items-center gap-1 text-xs"><Plus size={14} /> Kursus</button>}
                       </div>
-                      {viewMode === 'student' && <button onClick={() => { setActiveStudentCourseId(null); setActiveItemId(null); }} className="w-full px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center justify-center gap-2"><ChevronDown size={14} className="rotate-90 text-slate-400" /> Ke Beranda</button>}
+                      {viewMode === 'student' && <button onClick={() => { setActiveStudentCourseId(null); setActiveItemId(null); }} className="w-full px-3 py-2 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-xs font-bold flex items-center justify-center gap-2"><ChevronDown size={14} className="rotate-90 text-slate-400" /> Ke Beranda Kursus</button>}
                     </div>
                     <div className="flex-1 overflow-y-auto p-3">
                       {renderTree(viewMode === 'teacher' ? data : data.filter(c => c.id === activeStudentCourseId))}
@@ -728,7 +768,6 @@
                   </aside>
                 )}
 
-                {/* Content Panel */}
                 <main className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-8 relative print:p-0 print:bg-white print:overflow-visible">
                   
                   {activeMainTab === 'grades' && viewMode === 'teacher' ? (
@@ -754,7 +793,7 @@
                   ) : activeMainTab === 'students' && viewMode === 'teacher' ? (
                      <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                       <div className="p-6 border-b flex justify-between bg-slate-50">
-                         <h2 className="text-xl font-bold">Data Siswa Cloud</h2>
+                         <h2 className="text-xl font-bold">Data Siswa Terdaftar</h2>
                          <div className="flex gap-2">
                            <button onClick={() => setStudentFormMode('manual')} className="px-3 py-2 bg-white border font-bold rounded-lg flex gap-2"><Plus size={16} /> Manual</button>
                            <button onClick={() => setStudentFormMode('mass')} className="px-3 py-2 bg-emerald-100 text-emerald-700 font-bold rounded-lg flex gap-2"><FileUp size={16} /> Impor</button>
@@ -769,13 +808,13 @@
                         </form>
                       )}
                       {studentFormMode === 'mass' && (
-                        <div className="p-4 bg-emerald-50 border-b"><textarea value={massForm} onChange={(e) => setMassForm(e.target.value)} className="w-full h-32 border rounded-lg p-3 text-sm font-mono mb-2" placeholder="Nama, NIS&#10;Budi, 1001"/><div className="flex justify-end gap-2"><button onClick={() => setStudentFormMode(null)} className="px-4 py-2 text-emerald-700 font-bold rounded text-sm">Batal</button><button onClick={handleMassImportSubmit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded text-sm">Proses Impor ke Cloud</button></div></div>
+                        <div className="p-4 bg-emerald-50 border-b"><textarea value={massForm} onChange={(e) => setMassForm(e.target.value)} className="w-full h-32 border rounded-lg p-3 text-sm font-mono mb-2" placeholder="Nama, NIS&#10;Budi, 1001"/><div className="flex justify-end gap-2"><button onClick={() => setStudentFormMode(null)} className="px-4 py-2 text-emerald-700 font-bold rounded text-sm">Batal</button><button onClick={handleMassImportSubmit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded text-sm">Proses Impor</button></div></div>
                       )}
                       <table className="w-full text-left border-collapse">
-                        <thead><tr className="bg-slate-100 border-b"><th className="p-4">Nama Siswa</th><th className="p-4">NIS</th><th className="p-4 print:hidden">Aksi</th></tr></thead>
+                        <thead><tr className="bg-slate-100 border-b"><th className="p-4">Nama Siswa</th><th className="p-4">NIS (Username/Pass)</th><th className="p-4 print:hidden">Aksi</th></tr></thead>
                         <tbody>
                           {students.map((st) => (
-                            <tr key={st.id} className="border-b hover:bg-slate-50"><td className="p-4 font-medium text-slate-800">{st.name}</td><td className="p-4 text-slate-500">{st.nis}</td><td className="p-4 print:hidden"><button onClick={() => showConfirm("Hapus dari Cloud?", () => handleSetStudents(students.filter(s => s.id !== st.id)))} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>
+                            <tr key={st.id} className="border-b hover:bg-slate-50"><td className="p-4 font-medium text-slate-800">{st.name}</td><td className="p-4 text-slate-500">{st.nis}</td><td className="p-4 print:hidden"><button onClick={() => showConfirm("Hapus siswa?", () => handleSetStudents(students.filter(s => s.id !== st.id)))} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>
                           ))}
                         </tbody>
                       </table>
@@ -784,7 +823,7 @@
                   ) : viewMode === 'student' && !activeStudentCourseId ? (
                     <div className="max-w-6xl mx-auto p-2 md:p-6 animate-fade-in">
                       <div className="mb-10 bg-gradient-to-r from-indigo-700 to-blue-500 rounded-3xl p-8 md:p-12 text-white shadow-lg relative overflow-hidden">
-                        <div className="relative z-10"><h1 className="text-3xl md:text-5xl font-extrabold mb-4">Selamat Datang!</h1><p className="text-indigo-100 text-lg max-w-2xl">Lanjutkan proses belajarmu dari Cloud secara real-time.</p></div>
+                        <div className="relative z-10"><h1 className="text-3xl md:text-5xl font-extrabold mb-4">Selamat Datang, {studentSession ? studentSession.name : 'Pelajar'}!</h1><p className="text-indigo-100 text-lg max-w-2xl">Lanjutkan proses belajarmu hari ini.</p></div>
                       </div>
                       <h2 className="text-2xl font-extrabold text-slate-800 mb-6 flex items-center gap-2"><Library size={24} className="text-indigo-600"/> Kursus Tersedia</h2>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -795,7 +834,7 @@
                           const progress = totalItems === 0 ? 0 : Math.round((completedCount / totalItems) * 100);
                           
                           return (
-                            <div key={course.id} onClick={() => { if (course.isLocked) return showConfirm('Kursus dikunci oleh Guru.', ()=>{}); setActiveStudentCourseId(course.id); setActiveItemId(null); }} className={`bg-white rounded-2xl shadow-sm border p-6 flex flex-col group ${course.isLocked ? 'opacity-80 cursor-not-allowed grayscale-[20%]' : 'cursor-pointer hover:shadow-xl hover:border-indigo-400 transform hover:-translate-y-1.5 transition-all'}`}>
+                            <div key={course.id} onClick={() => { if (course.isLocked) return showConfirm('Kursus masih dikunci oleh Guru.', ()=>{}); setActiveStudentCourseId(course.id); setActiveItemId(null); }} className={`bg-white rounded-2xl shadow-sm border p-6 flex flex-col group ${course.isLocked ? 'opacity-80 cursor-not-allowed grayscale-[20%]' : 'cursor-pointer hover:shadow-xl hover:border-indigo-400 transform hover:-translate-y-1.5 transition-all'}`}>
                               <div className="flex justify-between items-start mb-5"><div className={`w-14 h-14 rounded-xl flex items-center justify-center ${course.isLocked ? 'bg-slate-100 text-slate-400' : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}>{course.isLocked ? <Lock size={28} /> : <Library size={28} />}</div>{course.isLocked && <span className="text-xs font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded-md border flex items-center gap-1"><Lock size={12}/> Terkunci</span>}</div>
                               <h3 className={`text-xl font-bold mb-2 flex-1 ${course.isLocked ? 'text-slate-500' : 'text-slate-800 group-hover:text-indigo-700'}`}>{course.title}</h3>
                               <div className="mt-4 pt-4 border-t border-slate-100"><div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden"><div className="bg-indigo-600 h-2.5 rounded-full" style={{width: `${progress}%`}}></div></div></div>
@@ -814,7 +853,7 @@
                   ) : (
                     <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-10 min-h-full relative">
                         {viewMode === 'teacher' && (
-                          <button onClick={() => handleDeleteItem(activeItem.id)} className="absolute top-6 right-6 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"><Trash2 size={16} /> <span className="hidden md:inline">Hapus dari Cloud</span></button>
+                          <button onClick={() => handleDeleteItem(activeItem.id)} className="absolute top-6 right-6 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"><Trash2 size={16} /> <span className="hidden md:inline">Hapus Konten</span></button>
                         )}
 
                         {viewMode === 'teacher' ? (
@@ -824,7 +863,7 @@
                         <div className="flex items-center gap-3 mt-4 flex-wrap mb-8">
                           <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-md text-xs font-bold uppercase tracking-wider">{activeItem.type}</span>
                           {viewMode === 'teacher' && activeItem.type === 'course' && (
-                             <button onClick={() => handleDataChange(activeItem.id, { isLocked: !activeItem.isLocked })} className={`px-3 py-1.5 rounded-md text-xs font-bold flex gap-1 ${activeItem.isLocked ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>{activeItem.isLocked ? <><Lock size={14}/> Terkunci (Siswa)</> : <><Unlock size={14}/> Terbuka (Siswa)</>}</button>
+                             <button onClick={() => handleDataChange(activeItem.id, { isLocked: !activeItem.isLocked })} className={`px-3 py-1.5 rounded-md text-xs font-bold flex gap-1 ${activeItem.isLocked ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>{activeItem.isLocked ? <><Lock size={14}/> Dikunci (Siswa)</> : <><Unlock size={14}/> Terbuka (Siswa)</>}</button>
                           )}
                           {viewMode === 'teacher' && !['course', 'module', 'folder'].includes(activeItem.type) && (
                             <select value={activeItem.type} onChange={(e) => handleDataChange(activeItem.id, { type: e.target.value })} className="text-xs font-bold border rounded-md px-2 py-1 outline-none">
