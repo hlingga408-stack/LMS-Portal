@@ -52,14 +52,13 @@
         // Masukkan API Key dan detail Firebase Anda ke dalam kurung kurawal di bawah ini.
         // Jika Anda membiarkannya kosong, aplikasi akan berjalan offline (data tidak tersimpan).
         const myFirebaseConfig = {
-            apiKey: "AIzaSyAO8Pj2d7Wt8X6mfrLudZEIZxV4CTziXUI",
+         apiKey: "AIzaSyAO8Pj2d7Wt8X6mfrLudZEIZxV4CTziXUI",
   authDomain: "lumina-lms-4e451.firebaseapp.com",
   projectId: "lumina-lms-4e451",
   storageBucket: "lumina-lms-4e451.firebasestorage.app",
   messagingSenderId: "443356880708",
   appId: "1:443356880708:web:f3b37a1aeb9cfc57f70111",
-  measurementId: "G-KWXHYGY23F"
-
+  measurementId: "G-KWXHYGY23F"  
         };
         // =========================================================================
 
@@ -532,13 +531,13 @@
                         </div>
                         
                         {viewMode === 'teacher' ? (
-                          <>
-                            <textarea value={q.question} onChange={(e) => updateQuestion(q.id, {question: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[80px] mb-2" placeholder="Ketik pertanyaan..." />
-                            {(q.question.includes('[LATEX:') || q.question.length > 0) && (
-                              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800"><span className="font-bold text-slate-500 text-xs block mb-1">Preview Soal:</span>{renderTextWithLatex(q.question)}</div>
-                            )}
-                          </>
-                        ) : <div className="text-slate-800 font-medium">{renderTextWithLatex(q.question)}</div>}
+                  <>
+                    <textarea value={q.question} onChange={(e) => updateQuestion(q.id, {question: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[80px] mb-2" placeholder="Ketik pertanyaan..." />
+                    {(q.question.includes('[LATEX:') || q.question.length > 0) && (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800"><span className="font-bold text-slate-500 text-xs block mb-1">Preview Soal:</span>{renderTextWithLatex(q.question)}</div>
+                    )}
+                  </>
+                ) : <div className="text-slate-800 font-medium">{renderTextWithLatex(q.question)}</div>}
                         
                         {q.imageUrl && (
                           <div className="mt-3 relative inline-block max-w-full">
@@ -896,15 +895,60 @@
                               <label className="block text-sm font-bold text-slate-700">{activeItem.type === 'text' ? 'Konten Artikel' : 'Deskripsi Pengantar'}</label>
                               {viewMode === 'teacher' && (
                                 <div className="flex gap-2">
-                                   <button onClick={() => showPrompt("URL Gambar", "https://contoh.com/gambar.jpg", "text", (url) => { if(url) handleDataChange(activeItem.id, { content: (activeItem.content || '') + `\n<img src="${url}" alt="gambar" class="max-w-full h-auto rounded-lg my-4 shadow-sm" />\n` }); })} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded font-medium flex items-center gap-1"><ImageIcon size={12}/> + Gambar</button>
-                                   <button onClick={() => showPrompt("Ketik LaTeX (Tanpa $$)", "E = mc^2", "textarea", (latex) => { if(latex) handleDataChange(activeItem.id, { content: (activeItem.content || '') + `\n<img src="https://latex.codecogs.com/svg.latex?\\Large&space;${encodeURIComponent(latex)}" alt="LaTeX" class="inline-block my-2 h-6" />\n` }); })} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded font-medium flex items-center gap-1"><span className="font-serif italic font-bold">f(x)</span> + LaTeX</button>
+                                   <button onMouseDown={(e) => { 
+                                        e.preventDefault(); 
+                                        const t = document.getElementById('main-editor');
+                                        const cursorPos = t ? t.selectionStart : (activeItem.content || '').length;
+                                        showPrompt("URL Gambar", "https://contoh.com/gambar.jpg", "text", (url) => { 
+                                            if(url) {
+                                                const v = activeItem.content || '';
+                                                handleDataChange(activeItem.id, { content: v.substring(0, cursorPos) + `\n<img src="${url}" alt="gambar" class="max-w-full h-auto rounded-lg my-4 shadow-sm" />\n` + v.substring(cursorPos) }); 
+                                            }
+                                        }); 
+                                    }} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded font-medium flex items-center gap-1"><ImageIcon size={12}/> + Gambar</button>
+                                   <button onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        const t = document.getElementById('main-editor');
+                                        const cursorPos = t ? t.selectionStart : (activeItem.content || '').length;
+                                        showPrompt("Ketik LaTeX (Tanpa $$)", "E = mc^2", "textarea", (latex) => { 
+                                            if(latex) {
+                                                const v = activeItem.content || '';
+                                                handleDataChange(activeItem.id, { content: v.substring(0, cursorPos) + `\n<img src="https://latex.codecogs.com/svg.latex?\\Large&space;${encodeURIComponent(latex)}" alt="LaTeX" class="inline-block my-2 h-6" />\n` + v.substring(cursorPos) }); 
+                                            }
+                                        });
+                                   }} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded font-medium flex items-center gap-1"><span className="font-serif italic font-bold">f(x)</span> + LaTeX</button>
                                 </div>
                               )}
                             </div>
+                            
                             {viewMode === 'teacher' ? (
-                              <textarea value={activeItem.content || ''} onChange={(e) => handleDataChange(activeItem.id, { content: e.target.value })} className="w-full min-h-[250px] p-4 border rounded-xl outline-none font-mono text-sm bg-slate-50 focus:border-indigo-500" placeholder="Ketik konten di sini..." />
+                              <div className="border border-slate-300 rounded-xl overflow-hidden focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-shadow">
+                                <div className="bg-slate-200 border-b border-slate-300 p-2 flex flex-wrap gap-1 md:gap-2 text-xs md:text-sm">
+                                  <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const t=document.getElementById('main-editor'); const s=t.selectionStart; const e=t.selectionEnd; const v=t.value; handleDataChange(activeItem.id, { content: v.substring(0,s) + '<b>' + v.substring(s,e) + '</b>' + v.substring(e) }); setTimeout(() => { t.focus(); t.setSelectionRange(s+3, e+7); }, 0); }} className="px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 font-bold" title="Tebal">B</button>
+                                  <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const t=document.getElementById('main-editor'); const s=t.selectionStart; const e=t.selectionEnd; const v=t.value; handleDataChange(activeItem.id, { content: v.substring(0,s) + '<i>' + v.substring(s,e) + '</i>' + v.substring(e) }); setTimeout(() => { t.focus(); t.setSelectionRange(s+3, e+7); }, 0); }} className="px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 italic" title="Miring">I</button>
+                                  <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const t=document.getElementById('main-editor'); const s=t.selectionStart; const e=t.selectionEnd; const v=t.value; handleDataChange(activeItem.id, { content: v.substring(0,s) + '<u>' + v.substring(s,e) + '</u>' + v.substring(e) }); setTimeout(() => { t.focus(); t.setSelectionRange(s+3, e+7); }, 0); }} className="px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 underline" title="Garis Bawah">U</button>
+                                  <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                                  <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const t=document.getElementById('main-editor'); const s=t.selectionStart; const e=t.selectionEnd; const v=t.value; handleDataChange(activeItem.id, { content: v.substring(0,s) + '<div style="text-align: left;">' + v.substring(s,e) + '</div>' + v.substring(e) }); setTimeout(() => { t.focus(); }, 0); }} className="px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100">Kiri</button>
+                                  <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const t=document.getElementById('main-editor'); const s=t.selectionStart; const e=t.selectionEnd; const v=t.value; handleDataChange(activeItem.id, { content: v.substring(0,s) + '<div style="text-align: center;">' + v.substring(s,e) + '</div>' + v.substring(e) }); setTimeout(() => { t.focus(); }, 0); }} className="px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100">Tengah</button>
+                                  <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const t=document.getElementById('main-editor'); const s=t.selectionStart; const e=t.selectionEnd; const v=t.value; handleDataChange(activeItem.id, { content: v.substring(0,s) + '<div style="text-align: right;">' + v.substring(s,e) + '</div>' + v.substring(e) }); setTimeout(() => { t.focus(); }, 0); }} className="px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100">Kanan</button>
+                                  <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const t=document.getElementById('main-editor'); const s=t.selectionStart; const e=t.selectionEnd; const v=t.value; handleDataChange(activeItem.id, { content: v.substring(0,s) + '<div style="text-align: justify;">' + v.substring(s,e) + '</div>' + v.substring(e) }); setTimeout(() => { t.focus(); }, 0); }} className="px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100">Kiri-Kanan</button>
+                                  <div className="w-px h-6 bg-slate-300 mx-1"></div>
+                                  <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const t=document.getElementById('main-editor'); const s=t.selectionStart; const e=t.selectionEnd; const v=t.value; handleDataChange(activeItem.id, { content: v.substring(0,s) + '<h2>' + v.substring(s,e) + '</h2>' + v.substring(e) }); setTimeout(() => { t.focus(); t.setSelectionRange(s+4, e+9); }, 0); }} className="px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 font-bold">Judul Besar</button>
+                                  <button onMouseDown={(e) => e.preventDefault()} onClick={() => { const t=document.getElementById('main-editor'); const s=t.selectionStart; const e=t.selectionEnd; const v=t.value; handleDataChange(activeItem.id, { content: v.substring(0,s) + '<h3>' + v.substring(s,e) + '</h3>' + v.substring(e) }); setTimeout(() => { t.focus(); t.setSelectionRange(s+4, e+9); }, 0); }} className="px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 font-semibold">Judul Sedang</button>
+                                </div>
+                                <textarea
+                                  id="main-editor"
+                                  value={activeItem.content || ''}
+                                  onChange={(e) => handleDataChange(activeItem.id, { content: e.target.value })}
+                                  className="w-full min-h-[300px] p-4 outline-none resize-y font-mono text-sm bg-slate-50"
+                                  placeholder="Blok teks yang ingin diubah, lalu klik tombol format di atas. Tekan Enter untuk garis baru."
+                                />
+                              </div>
                             ) : (
-                              <div className="prose prose-slate max-w-none prose-headings:font-bold prose-a:text-indigo-600" dangerouslySetInnerHTML={{ __html: activeItem.content || '<p class="text-slate-400 italic">Belum ada konten.</p>' }} />
+                              <div 
+                                className="prose prose-slate max-w-none prose-headings:font-bold prose-a:text-indigo-600"
+                                dangerouslySetInnerHTML={{ __html: (activeItem.content || '').replace(/\n/g, '<br/>') || '<p class="text-slate-400 italic">Belum ada konten.</p>' }}
+                              />
                             )}
                             
                             {['text', 'document'].includes(activeItem.type) && (
