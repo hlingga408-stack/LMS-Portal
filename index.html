@@ -9,7 +9,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
-        /* Gaya khusus untuk PDF / Print */
+        /* Gaya khusus untuk PDF / Cetak Laporan */
         @media print {
             .print\:hidden { display: none !important; }
             .print\:m-0 { margin: 0 !important; }
@@ -28,15 +28,20 @@
         /* Tambahan untuk Format Teks (Paragraf & Alignment) saat dilihat siswa */
         .prose p { margin-bottom: 1rem; line-height: 1.6; }
         .prose div { margin-bottom: 0.5rem; }
+        
+        /* Modifikasi Scrollbar agar lebih elegan */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-800 h-screen overflow-hidden">
     
     <div id="root" class="h-full"></div>
 
-    <!-- SCRIPT UTAMA APLIKASI (REACT) -->
     <script type="text/babel" data-type="module">
-        import React, { useState, useEffect } from 'https://esm.sh/react@18.2.0';
+        import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
         import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
         
         import { 
@@ -53,15 +58,14 @@
         // =========================================================================
         // 🔴🔴🔴 PENTING: ISI DATABASE FIREBASE ANDA DI BAWAH INI 🔴🔴🔴
         // =========================================================================
-        // Ganti bagian di bawah ini dengan Kunci API dari Langkah 1 & 3 Panduan
         const myFirebaseConfig = {
-          apiKey: "AIzaSyAO8Pj2d7Wt8X6mfrLudZEIZxV4CTziXUI",
+           apiKey: "AIzaSyAO8Pj2d7Wt8X6mfrLudZEIZxV4CTziXUI",
   authDomain: "lumina-lms-4e451.firebaseapp.com",
   projectId: "lumina-lms-4e451",
   storageBucket: "lumina-lms-4e451.firebasestorage.app",
   messagingSenderId: "443356880708",
   appId: "1:443356880708:web:f3b37a1aeb9cfc57f70111",
-  measurementId: "G-KWXHYGY23F" 
+  measurementId: "G-KWXHYGY23F"
         };
         // =========================================================================
 
@@ -130,15 +134,88 @@
           const [confirmModal, setConfirmModal] = useState({ isOpen: false, message: '', onConfirm: null });
           const [promptModal, setPromptModal] = useState({ isOpen: false, title: '', placeholder: '', type: 'text', onConfirm: null });
 
+          const ytContainerRef = useRef(null);
+          const [canCompleteVideo, setCanCompleteVideo] = useState(true);
+
+          // Muat API YouTube
+          useEffect(() => {
+            if (!window.YT) {
+              const tag = document.createElement('script');
+              tag.src = "https://www.youtube.com/iframe_api";
+              const firstScriptTag = document.getElementsByTagName('script')[0];
+              firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+            }
+          }, []);
+
+          // Listener Pemutar Video YouTube 50%
+          const activeItem = activeItemId ? findNode(data, activeItemId) : null;
+
+          useEffect(() => {
+            if (viewMode !== 'student' || activeItem?.type !== 'video' || !activeItem?.videoUrl) {
+              setCanCompleteVideo(true);
+              return;
+            }
+
+            setCanCompleteVideo(false);
+            let player;
+            let interval;
+
+            const initPlayer = () => {
+              if (!window.YT || !window.YT.Player) {
+                setTimeout(initPlayer, 100);
+                return;
+              }
+              if (!ytContainerRef.current) return;
+
+              const videoId = activeItem.videoUrl.split('v=')[1]?.split('&')[0];
+              if (!videoId) return;
+
+              // DIPERBAIKI: Menambahkan width dan height 100% agar responsif dan bisa diklik
+              player = new window.YT.Player(ytContainerRef.current, {
+                videoId: videoId,
+                width: '100%',
+                height: '100%',
+                playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1 },
+                events: {
+                  'onStateChange': (event) => {
+                    if (event.data === window.YT.PlayerState.PLAYING) {
+                      interval = setInterval(() => {
+                        if (player && player.getCurrentTime) {
+                          const currentTime = player.getCurrentTime();
+                          const duration = player.getDuration();
+                          if (duration > 0 && (currentTime / duration) >= 0.5) {
+                            setCanCompleteVideo(true);
+                            clearInterval(interval);
+                          }
+                        }
+                      }, 1000);
+                    } else {
+                      if (interval) clearInterval(interval);
+                    }
+                  }
+                }
+              });
+            };
+
+            initPlayer();
+
+            return () => {
+              if (interval) clearInterval(interval);
+              if (player && typeof player.destroy === 'function') {
+                 try { player.destroy(); } catch(e) {}
+              }
+            };
+          }, [activeItemId, viewMode, activeItem?.videoUrl]);
+
           const generateId = () => Math.random().toString(36).substr(2, 9);
 
-          // Timer for Sumatif Cooldown
+          // Timer Cooldown Sumatif
           useEffect(() => {
-             const timer = setInterval(() => setCurrentTime(Date.now()), 60000);
+             const timer = setInterval(() => setCurrentTime(Date.now()), 60000); // 1 menit
              return () => clearInterval(timer);
           }, []);
 
-          // Init Auth
+          // Inisialisasi Auth Firebase
           useEffect(() => {
             if (!auth) return;
             const initAuth = async () => {
@@ -154,7 +231,7 @@
             return onAuthStateChanged(auth, (user) => setFirebaseUser(user));
           }, []);
 
-          // Sync with Firestore
+          // Sinkronisasi data ke Firestore
           useEffect(() => {
             if (!firebaseUser || !db) return;
             
@@ -225,9 +302,10 @@
               if (matchedStudent) {
                 setStudentSession(matchedStudent); setIsLoggedIn(true); setViewMode('student'); setActiveStudentCourseId(null); setActiveMainTab('curriculum'); setLoginError('');
               } else if (username === 'siswa' && password === 'siswa123') {
+                // Fallback demo
                 setStudentSession({ name: 'Siswa Demo', nis: '9999' }); setIsLoggedIn(true); setViewMode('student'); setActiveStudentCourseId(null); setActiveMainTab('curriculum'); setLoginError('');
               } else {
-                setLoginError('Kredensial salah! Gunakan NIS Anda untuk Username dan Password.');
+                setLoginError('Username atau kata sandi salah!');
               }
             }
           };
@@ -241,15 +319,13 @@
           const showConfirm = (message, onConfirm) => setConfirmModal({ isOpen: true, message, onConfirm });
           const showPrompt = (title, placeholder, type, onConfirm) => setPromptModal({ isOpen: true, title, placeholder, type, onConfirm });
 
-          const findNode = (nodes, id) => {
+          function findNode(nodes, id) {
             for (const node of nodes) {
               if (node.id === id) return node;
               if (node.items) { const found = findNode(node.items, id); if (found) return found; }
             }
             return null;
-          };
-
-          const activeItem = activeItemId ? findNode(data, activeItemId) : null;
+          }
 
           const getFlatActionableItems = (items) => {
             let flatList = [];
@@ -321,7 +397,7 @@
           };
 
           const handleDeleteItem = (id) => {
-            showConfirm("Yakin ingin menghapus item ini dari sistem Cloud beserta seluruh isinya?", () => {
+            showConfirm("Yakin ingin menghapus item ini dari sistem beserta seluruh isinya?", () => {
               const filterNodes = (nodes) => nodes.filter(node => node.id !== id).map(node => {
                 if (node.items) return { ...node, items: filterNodes(node.items) };
                 return node;
@@ -350,7 +426,7 @@
           };
 
           const handleExportExcel = () => {
-            const csvHeaders = ["Nama Siswa", "NIS/ID", "Judul Kuis / Modul", "Nilai Akhir"];
+            const csvHeaders = ["Nama Siswa", "NIS/ID", "Judul Kuis", "Nilai Akhir"];
             const csvRows = submissions.map(row => `"${row.studentName}";"${row.nis}";"${row.quizTitle}";"${row.score}"`);
             const csvContent = "\uFEFF" + csvHeaders.join(";") + "\n" + csvRows.join("\n");
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -362,7 +438,7 @@
 
           const handlePrint = () => {
             const printWindow = window.open('', '_blank', 'width=800,height=600');
-            if (!printWindow) { showConfirm('Pop-up diblokir oleh browser. Harap izinkan pop-up (Allow Pop-ups) untuk mencetak/menyimpan PDF.', () => {}); return; }
+            if (!printWindow) { showConfirm('Pop-up diblokir. Harap izinkan pop-up untuk mencetak PDF.', () => {}); return; }
             const htmlContent = `
               <!DOCTYPE html><html><head><title>Laporan Nilai LUMINA</title>
               <style>
@@ -483,7 +559,7 @@
                let updates = { quizResults: { ...quizResults, [item.id]: finalScore } };
                
                if (isSumatif) {
-                  // Jika Kuis Sumatif, nilai harus 100 baru tamat. Jika gagal, set cooldown 2 jam (7200000 ms)
+                  // Kuis Sumatif wajib 100
                   if (finalScore === 100) {
                      updates.completedItems = [...completedItems, item.id];
                   } else {
@@ -494,11 +570,11 @@
                }
                handleUpdateProgress(updates);
 
-               const studentName = studentSession ? studentSession.name : 'Siswa Demo';
-               const studentNis = studentSession ? studentSession.nis : 'Demo';
+               const sName = studentSession ? studentSession.name : 'Siswa Demo';
+               const sNis = studentSession ? studentSession.nis : '9999';
 
                handleSetSubmissions([...submissions, {
-                  id: generateId(), studentName: studentName, nis: studentNis, quizTitle: item.title, score: finalScore
+                  id: generateId(), studentName: sName, nis: sNis, quizTitle: item.title, score: finalScore
                }]);
             };
 
@@ -511,146 +587,160 @@
               );
             };
 
+            // Fitur Anti-Cheat khusus siswa
+            const applyAntiCheatProps = () => {
+              if (viewMode === 'teacher') return {}; // Guru bebas copy-paste
+              return {
+                style: { WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none', userSelect: 'none' },
+                onCopy: (e) => e.preventDefault(),
+                onCut: (e) => e.preventDefault(),
+                onPaste: (e) => e.preventDefault(),
+                onContextMenu: (e) => e.preventDefault(),
+              };
+            };
+
             return (
               <div className="space-y-6 mt-6">
                 <h3 className="font-bold text-lg text-slate-800 border-b pb-2">Daftar Soal Kuis</h3>
                 
                 {questions.length === 0 ? <p className="text-slate-500 italic text-sm">Belum ada soal ditambahkan.</p> : (
-                  questions.map((q, index) => (
-                    <div key={q.id} className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm relative">
-                      <div className="absolute top-4 right-4 flex gap-2">
-                        <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md uppercase tracking-wider">{q.type.replace('_', ' ')}</span>
-                        {viewMode === 'teacher' && (
-                          <button onClick={() => showConfirm("Hapus soal ini?", () => handleDataChange(item.id, { questions: questions.filter(quest => quest.id !== q.id) }))} className="text-red-400 hover:text-red-600 p-1 bg-red-50 rounded-md">
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="mb-4 pr-24">
-                        <div className="flex justify-between items-end mb-1">
-                          <label className="block text-sm font-bold text-slate-700">Soal {index + 1}</label>
+                  <div {...applyAntiCheatProps()}>
+                    {questions.map((q, index) => (
+                      <div key={q.id} className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm relative mb-4">
+                        <div className="absolute top-4 right-4 flex gap-2">
+                          <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md uppercase tracking-wider">{q.type.replace('_', ' ')}</span>
                           {viewMode === 'teacher' && (
-                            <div className="flex gap-2">
-                              <button onClick={() => showPrompt("URL Gambar", "https://contoh.com/gambar.jpg", "text", (url) => { if(url) updateQuestion(q.id, { imageUrl: url }); })} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded font-medium flex items-center gap-1"><ImageIcon size={12}/> + Gambar</button>
-                              <button onClick={() => showPrompt("Ketik LaTeX (Tanpa $$)", "E = mc^2", "textarea", (latex) => { if(latex) updateQuestion(q.id, { question: q.question + ` [LATEX:${encodeURIComponent(latex)}]` }); })} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded font-medium flex items-center gap-1"><span className="font-serif italic font-bold">f(x)</span> + LaTeX</button>
-                            </div>
+                            <button onClick={() => showConfirm("Hapus soal ini?", () => handleDataChange(item.id, { questions: questions.filter(quest => quest.id !== q.id) }))} className="text-red-400 hover:text-red-600 p-1 bg-red-50 rounded-md">
+                              <Trash2 size={16} />
+                            </button>
                           )}
                         </div>
-                        
-                        {viewMode === 'teacher' ? (
-                          <>
-                            <textarea value={q.question} onChange={(e) => updateQuestion(q.id, {question: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[80px] mb-2" placeholder="Ketik pertanyaan..." />
-                            {(q.question.includes('[LATEX:') || q.question.length > 0) && (
-                              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800"><span className="font-bold text-slate-500 text-xs block mb-1">Preview Soal:</span>{renderTextWithLatex(q.question)}</div>
-                            )}
-                          </>
-                        ) : <div className="text-slate-800 font-medium">{renderTextWithLatex(q.question)}</div>}
-                        
-                        {q.imageUrl && (
-                          <div className="mt-3 relative inline-block max-w-full">
-                            <img src={q.imageUrl} alt="Gambar Soal" className="max-h-[300px] rounded-lg border border-slate-200 shadow-sm" />
+
+                        <div className="mb-4 pr-24">
+                          <div className="flex justify-between items-end mb-1">
+                            <label className="block text-sm font-bold text-slate-700">Soal {index + 1}</label>
                             {viewMode === 'teacher' && (
-                              <button onClick={() => showConfirm("Hapus gambar?", () => updateQuestion(q.id, {imageUrl: ''}))} className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-md shadow-sm"><Trash2 size={14} /></button>
+                              <div className="flex gap-2">
+                                <button onClick={() => showPrompt("URL Gambar", "https://contoh.com/gambar.jpg", "text", (url) => { if(url) updateQuestion(q.id, { imageUrl: url }); })} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded font-medium flex items-center gap-1"><ImageIcon size={12}/> + Gambar</button>
+                                <button onClick={() => showPrompt("Ketik LaTeX (Tanpa $$)", "E = mc^2", "textarea", (latex) => { if(latex) updateQuestion(q.id, { question: q.question + ` [LATEX:${encodeURIComponent(latex)}]` }); })} className="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded font-medium flex items-center gap-1"><span className="font-serif italic font-bold">f(x)</span> + LaTeX</button>
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
-
-                      {q.type === 'multiple_choice' && (
-                        <div className="space-y-2 ml-4">
-                          <p className="text-sm font-bold text-slate-600 mb-2">Pilihan Jawaban (Tandai Kunci Benar):</p>
-                          {q.options.map((opt, optIndex) => (
-                            <div key={optIndex} className="flex items-center gap-2">
-                              {viewMode === 'teacher' ? (
-                                <>
-                                  <input type="radio" name={`correct-${q.id}`} checked={q.correctAnswer === opt} onChange={() => updateQuestion(q.id, {correctAnswer: opt})} className="w-4 h-4 text-indigo-600"/>
-                                  <input type="text" value={opt} onChange={(e) => {
-                                      const newOpts = [...q.options]; newOpts[optIndex] = e.target.value;
-                                      const newCorrect = q.correctAnswer === opt ? e.target.value : q.correctAnswer;
-                                      updateQuestion(q.id, {options: newOpts, correctAnswer: newCorrect});
-                                    }} className="flex-1 border-b border-slate-200 p-1 text-sm outline-none focus:border-indigo-500"/>
-                                  <button onClick={() => showConfirm("Hapus Opsi?", () => updateQuestion(q.id, {options: q.options.filter((_, i) => i !== optIndex)}))} className="text-slate-400 hover:text-red-500"><X size={14}/></button>
-                                </>
-                              ) : (
-                                <label className="flex items-center gap-2 cursor-pointer w-full p-2 hover:bg-slate-50 rounded border border-transparent">
-                                  <input type="radio" name={`student-${q.id}`} disabled={quizResults[item.id] !== undefined} checked={studentAnswers[`${item.id}-${q.id}`] === opt} onChange={() => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}`]: opt}})} className="w-4 h-4 text-indigo-600"/>
-                                  <span className="text-sm">{opt}</span>
-                                </label>
-                              )}
-                            </div>
-                          ))}
-                          {viewMode === 'teacher' && (
-                            <button onClick={() => updateQuestion(q.id, {options: [...q.options, `Opsi ${q.options.length + 1}`]})} className="text-xs font-bold text-indigo-600 flex items-center gap-1 mt-2 hover:bg-indigo-50 px-2 py-1 rounded"><Plus size={14}/> Tambah Opsi Lain</button>
-                          )}
-                        </div>
-                      )}
-
-                      {q.type === 'true_false' && (
-                        <div className="space-y-2 ml-4">
-                          <p className="text-sm font-bold text-slate-600 mb-2">Jawaban Benar:</p>
-                          {['Benar', 'Salah'].map((opt) => (
-                            <div key={opt} className="flex items-center gap-2">
-                              {viewMode === 'teacher' ? (
-                                <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name={`correct-${q.id}`} checked={q.correctAnswer === opt} onChange={() => updateQuestion(q.id, {correctAnswer: opt})} /><span className="text-sm">{opt}</span></label>
-                              ) : (
-                                <label className="flex items-center gap-2 cursor-pointer w-full p-2 hover:bg-slate-50 rounded"><input type="radio" name={`student-${q.id}`} disabled={quizResults[item.id] !== undefined} checked={studentAnswers[`${item.id}-${q.id}`] === opt} onChange={() => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}`]: opt}})} /><span className="text-sm">{opt}</span></label>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {q.type === 'essay' && (
-                        <div className="ml-4 mt-2">
+                          
                           {viewMode === 'teacher' ? (
-                            <textarea value={q.correctAnswer} onChange={(e) => updateQuestion(q.id, {correctAnswer: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[60px]" placeholder="Keyword kunci jawaban (untuk guru saja)..." />
-                          ) : (
-                            <textarea disabled={quizResults[item.id] !== undefined} value={studentAnswers[`${item.id}-${q.id}`] || ''} onChange={(e) => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}`]: e.target.value}})} className="w-full border border-slate-300 rounded-lg p-3 text-sm outline-none focus:border-indigo-500 min-h-[100px]" placeholder="Ketik jawaban Anda..." />
+                            <>
+                              <textarea value={q.question} onChange={(e) => updateQuestion(q.id, {question: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[80px] mb-2" placeholder="Ketik pertanyaan..." />
+                              {(q.question.includes('[LATEX:') || q.question.length > 0) && (
+                                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800"><span className="font-bold text-slate-500 text-xs block mb-1">Preview Soal:</span>{renderTextWithLatex(q.question)}</div>
+                              )}
+                            </>
+                          ) : <div className="text-slate-800 font-medium pointer-events-none">{renderTextWithLatex(q.question)}</div>}
+                          
+                          {q.imageUrl && (
+                            <div className="mt-3 relative inline-block max-w-full">
+                              <img src={q.imageUrl} alt="Gambar Soal" className="max-h-[300px] rounded-lg border border-slate-200 shadow-sm pointer-events-none" draggable="false" />
+                              {viewMode === 'teacher' && (
+                                <button onClick={() => showConfirm("Hapus gambar?", () => updateQuestion(q.id, {imageUrl: ''}))} className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white p-1.5 rounded-md shadow-sm pointer-events-auto"><Trash2 size={14} /></button>
+                              )}
+                            </div>
                           )}
                         </div>
-                      )}
 
-                      {q.type === 'matching' && (
-                        <div className="ml-4 mt-2">
-                          <p className="text-sm font-bold text-slate-600 mb-2">Pasangan Kunci Jawaban:</p>
-                          <div className="space-y-2">
-                            {q.pairs?.map((pair, pIdx) => (
-                              <div key={pIdx} className="flex gap-2 items-center">
+                        {q.type === 'multiple_choice' && (
+                          <div className="space-y-2 ml-4">
+                            <p className="text-sm font-bold text-slate-600 mb-2">Pilihan Jawaban:</p>
+                            {q.options.map((opt, optIndex) => (
+                              <div key={optIndex} className="flex items-center gap-2">
                                 {viewMode === 'teacher' ? (
-                                  <><input type="text" value={pair.left} onChange={(e) => { const np = [...q.pairs]; np[pIdx].left = e.target.value; updateQuestion(q.id, {pairs: np}); }} className="flex-1 border p-1 rounded text-sm" placeholder="Sisi Kiri" /><span className="text-slate-400">{'->'}</span><input type="text" value={pair.right} onChange={(e) => { const np = [...q.pairs]; np[pIdx].right = e.target.value; updateQuestion(q.id, {pairs: np}); }} className="flex-1 border p-1 rounded text-sm" placeholder="Sisi Kanan" /><button onClick={() => showConfirm("Hapus?", () => updateQuestion(q.id, {pairs: q.pairs.filter((_, i) => i !== pIdx)}))} className="text-red-400 p-1"><X size={14}/></button></>
-                                ) : (
-                                  <><div className="flex-1 p-2 bg-slate-50 border rounded text-sm">{pair.left}</div><span className="text-slate-400 mx-2">{'->'}</span>
-                                    <select disabled={quizResults[item.id] !== undefined} value={studentAnswers[`${item.id}-${q.id}-pair${pIdx}`] || ''} onChange={(e) => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}-pair${pIdx}`]: e.target.value}})} className="flex-1 border p-2 rounded text-sm bg-white">
-                                      <option value="">-- Pilih --</option>
-                                      {[...q.pairs].map(p=>p.right).sort().map((opt, idx) => <option key={idx} value={opt}>{opt}</option>)}
-                                    </select>
+                                  <>
+                                    <input type="radio" name={`correct-${q.id}`} checked={q.correctAnswer === opt} onChange={() => updateQuestion(q.id, {correctAnswer: opt})} className="w-4 h-4 text-indigo-600"/>
+                                    <input type="text" value={opt} onChange={(e) => {
+                                        const newOpts = [...q.options]; newOpts[optIndex] = e.target.value;
+                                        const newCorrect = q.correctAnswer === opt ? e.target.value : q.correctAnswer;
+                                        updateQuestion(q.id, {options: newOpts, correctAnswer: newCorrect});
+                                      }} className="flex-1 border-b border-slate-200 p-1 text-sm outline-none focus:border-indigo-500"/>
+                                    <button onClick={() => showConfirm("Hapus Opsi?", () => updateQuestion(q.id, {options: q.options.filter((_, i) => i !== optIndex)}))} className="text-slate-400 hover:text-red-500"><X size={14}/></button>
                                   </>
+                                ) : (
+                                  <label className="flex items-center gap-2 cursor-pointer w-full p-2 hover:bg-slate-50 rounded border border-transparent">
+                                    <input type="radio" name={`student-${q.id}`} disabled={quizResults[item.id] !== undefined} checked={studentAnswers[`${item.id}-${q.id}`] === opt} onChange={() => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}`]: opt}})} className="w-4 h-4 text-indigo-600"/>
+                                    <span className="text-sm pointer-events-none">{opt}</span>
+                                  </label>
                                 )}
                               </div>
                             ))}
-                            {viewMode === 'teacher' && <button onClick={() => updateQuestion(q.id, {pairs: [...(q.pairs||[]), {left: 'Baru', right: 'Baru'}]})} className="text-xs text-indigo-600 mt-2 font-bold flex items-center gap-1"><Plus size={14}/> Tambah Pasangan</button>}
+                            {viewMode === 'teacher' && (
+                              <button onClick={() => updateQuestion(q.id, {options: [...q.options, `Opsi ${q.options.length + 1}`]})} className="text-xs font-bold text-indigo-600 flex items-center gap-1 mt-2 hover:bg-indigo-50 px-2 py-1 rounded pointer-events-auto"><Plus size={14}/> Tambah Opsi Lain</button>
+                            )}
                           </div>
-                        </div>
-                      )}
+                        )}
 
-                      {viewMode === 'teacher' ? (
-                        <div className="mt-4 pt-4 border-t border-slate-100">
-                          <label className="block text-xs font-bold text-slate-500 mb-1">Pembahasan (Muncul setelah siswa submit):</label>
-                          <textarea value={q.explanation || ''} onChange={(e) => updateQuestion(q.id, {explanation: e.target.value})} className="w-full border border-amber-200 bg-amber-50/30 rounded-lg p-2 text-sm outline-none min-h-[60px]" placeholder="Tulis penjelasan..." />
-                        </div>
-                      ) : quizResults[item.id] !== undefined && !isSumatif && (
-                        <div className="mt-3">
-                          {q.type !== 'essay' && (
-                             <div className={`p-2 text-sm rounded border ${ (q.type === 'multiple_choice' || q.type === 'true_false' ? (studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer) : true) ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-                               {q.type === 'multiple_choice' || q.type === 'true_false' ? (studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer ? <><CheckCircle size={16} className="inline mr-1"/> Benar</> : <><X size={16} className="inline mr-1"/> Salah. Kunci: <b>{q.correctAnswer}</b></>) : <span>Lihat Kunci Jawaban / Review Manual</span>}
-                             </div>
-                          )}
-                          {q.explanation && <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg"><p className="text-xs font-bold text-amber-800 mb-1">Pembahasan:</p><p className="text-sm text-amber-900">{q.explanation}</p></div>}
-                        </div>
-                      )}
-                    </div>
-                  ))
+                        {q.type === 'true_false' && (
+                          <div className="space-y-2 ml-4">
+                            <p className="text-sm font-bold text-slate-600 mb-2">Jawaban Benar:</p>
+                            {['Benar', 'Salah'].map((opt) => (
+                              <div key={opt} className="flex items-center gap-2">
+                                {viewMode === 'teacher' ? (
+                                  <label className="flex items-center gap-2 cursor-pointer"><input type="radio" name={`correct-${q.id}`} checked={q.correctAnswer === opt} onChange={() => updateQuestion(q.id, {correctAnswer: opt})} /><span className="text-sm">{opt}</span></label>
+                                ) : (
+                                  <label className="flex items-center gap-2 cursor-pointer w-full p-2 hover:bg-slate-50 rounded"><input type="radio" name={`student-${q.id}`} disabled={quizResults[item.id] !== undefined} checked={studentAnswers[`${item.id}-${q.id}`] === opt} onChange={() => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}`]: opt}})} /><span className="text-sm">{opt}</span></label>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {q.type === 'essay' && (
+                          <div className="ml-4 mt-2">
+                            {viewMode === 'teacher' ? (
+                              <textarea value={q.correctAnswer} onChange={(e) => updateQuestion(q.id, {correctAnswer: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[60px]" placeholder="Keyword kunci jawaban (untuk guru saja)..." />
+                            ) : (
+                              <textarea disabled={quizResults[item.id] !== undefined} value={studentAnswers[`${item.id}-${q.id}`] || ''} onChange={(e) => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}`]: e.target.value}})} className="w-full border border-slate-300 rounded-lg p-3 text-sm outline-none focus:border-indigo-500 min-h-[100px] select-text pointer-events-auto" placeholder="Ketik jawaban Anda..." />
+                            )}
+                          </div>
+                        )}
+
+                        {q.type === 'matching' && (
+                          <div className="ml-4 mt-2">
+                            <p className="text-sm font-bold text-slate-600 mb-2">Pasangan Kunci Jawaban:</p>
+                            <div className="space-y-2">
+                              {q.pairs?.map((pair, pIdx) => (
+                                <div key={pIdx} className="flex gap-2 items-center">
+                                  {viewMode === 'teacher' ? (
+                                    <><input type="text" value={pair.left} onChange={(e) => { const np = [...q.pairs]; np[pIdx].left = e.target.value; updateQuestion(q.id, {pairs: np}); }} className="flex-1 border p-1 rounded text-sm" placeholder="Sisi Kiri" /><span className="text-slate-400">{'->'}</span><input type="text" value={pair.right} onChange={(e) => { const np = [...q.pairs]; np[pIdx].right = e.target.value; updateQuestion(q.id, {pairs: np}); }} className="flex-1 border p-1 rounded text-sm" placeholder="Sisi Kanan" /><button onClick={() => showConfirm("Hapus?", () => updateQuestion(q.id, {pairs: q.pairs.filter((_, i) => i !== pIdx)}))} className="text-red-400 p-1"><X size={14}/></button></>
+                                  ) : (
+                                    <><div className="flex-1 p-2 bg-slate-50 border rounded text-sm">{pair.left}</div><span className="text-slate-400 mx-2">{'->'}</span>
+                                      <select disabled={quizResults[item.id] !== undefined} value={studentAnswers[`${item.id}-${q.id}-pair${pIdx}`] || ''} onChange={(e) => handleUpdateProgress({studentAnswers: {...studentAnswers, [`${item.id}-${q.id}-pair${pIdx}`]: e.target.value}})} className="flex-1 border p-2 rounded text-sm bg-white pointer-events-auto">
+                                        <option value="">-- Pilih --</option>
+                                        {[...q.pairs].map(p=>p.right).sort().map((opt, idx) => <option key={idx} value={opt}>{opt}</option>)}
+                                      </select>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
+                              {viewMode === 'teacher' && <button onClick={() => updateQuestion(q.id, {pairs: [...(q.pairs||[]), {left: 'Baru', right: 'Baru'}]})} className="text-xs text-indigo-600 mt-2 font-bold flex items-center gap-1"><Plus size={14}/> Tambah Pasangan</button>}
+                            </div>
+                          </div>
+                        )}
+
+                        {viewMode === 'teacher' ? (
+                          <div className="mt-4 pt-4 border-t border-slate-100">
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Pembahasan (Muncul setelah siswa submit):</label>
+                            <textarea value={q.explanation || ''} onChange={(e) => updateQuestion(q.id, {explanation: e.target.value})} className="w-full border border-amber-200 bg-amber-50/30 rounded-lg p-2 text-sm outline-none min-h-[60px]" placeholder="Tulis penjelasan..." />
+                          </div>
+                        ) : quizResults[item.id] !== undefined && !isSumatif && (
+                          <div className="mt-3">
+                            {q.type !== 'essay' && (
+                               <div className={`p-2 text-sm rounded border ${ (q.type === 'multiple_choice' || q.type === 'true_false' ? (studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer) : true) ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                                 {q.type === 'multiple_choice' || q.type === 'true_false' ? (studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer ? <><CheckCircle size={16} className="inline mr-1"/> Benar</> : <><X size={16} className="inline mr-1"/> Salah. Kunci: <b>{q.correctAnswer}</b></>) : <span>Lihat Kunci Jawaban / Review Manual</span>}
+                               </div>
+                            )}
+                            {q.explanation && <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg"><p className="text-xs font-bold text-amber-800 mb-1">Pembahasan:</p><p className="text-sm text-amber-900">{q.explanation}</p></div>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
 
                 {viewMode === 'teacher' && (
@@ -720,26 +810,12 @@
                     
                     <form onSubmit={handleLogin} className="space-y-4">
                       <div>
-                        <input 
-                          type="text" 
-                          placeholder="Username"
-                          value={username} 
-                          onChange={(e) => setUsername(e.target.value)} 
-                          className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" 
-                          required 
-                        />
+                        <input type="text" placeholder="Username (NIS untuk siswa)" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" required />
                       </div>
                       <div>
-                        <input 
-                          type="password" 
-                          placeholder="Password"
-                          value={password} 
-                          onChange={(e) => setPassword(e.target.value)} 
-                          className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" 
-                          required 
-                        />
+                        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" required />
                       </div>
-                      <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-4 rounded-xl shadow-md transition-colors mt-4 text-lg">Masuk</button>
+                      <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-4 rounded-xl shadow-md transition-colors mt-4 text-lg">Masuk Kelas</button>
                     </form>
                   </div>
                 </div>
@@ -818,7 +894,7 @@
                         <thead><tr className="bg-slate-100 text-slate-600 text-sm border-b print:bg-slate-50"><th className="p-4">Nama Siswa</th><th className="p-4">NIS</th><th className="p-4">Judul Kuis</th><th className="p-4">Nilai</th><th className="p-4 print:hidden">Aksi</th></tr></thead>
                         <tbody>
                           {submissions.map((sub) => (
-                            <tr key={sub.id} className="border-b hover:bg-slate-50"><td className="p-4 font-medium">{sub.studentName}</td><td className="p-4 text-slate-500">{sub.nis}</td><td className="p-4 text-slate-700">{sub.quizTitle}</td><td className="p-4"><span className={`font-bold px-2 py-1 rounded text-sm ${sub.score >= 70 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'}`}>{sub.score}</span></td><td className="p-4 print:hidden"><button onClick={() => showConfirm("Hapus nilai dari Cloud?", () => handleSetSubmissions(submissions.filter(s => s.id !== sub.id)))} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>
+                            <tr key={sub.id} className="border-b hover:bg-slate-50"><td className="p-4 font-medium">{sub.studentName}</td><td className="p-4 text-slate-500">{sub.nis}</td><td className="p-4 text-slate-700">{sub.quizTitle}</td><td className="p-4"><span className={`font-bold px-2 py-1 rounded text-sm ${sub.score >= 70 ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'}`}>{sub.score}</span></td><td className="p-4 print:hidden"><button onClick={() => showConfirm("Hapus nilai dari sistem?", () => handleSetSubmissions(submissions.filter(s => s.id !== sub.id)))} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>
                           ))}
                           {submissions.length === 0 && <tr><td colSpan="5" className="p-8 text-center text-slate-500">Belum ada data.</td></tr>}
                         </tbody>
@@ -837,7 +913,7 @@
                       {studentFormMode === 'manual' && (
                         <form onSubmit={handleAddManualStudent} className="p-4 bg-indigo-50 border-b flex gap-3 items-end">
                           <div className="flex-1"><label className="block text-xs font-bold mb-1">Nama</label><input type="text" value={manualForm.name} onChange={(e) => setManualForm({...manualForm, name: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
-                          <div className="flex-1"><label className="block text-xs font-bold mb-1">NIS</label><input type="text" value={manualForm.nis} onChange={(e) => setManualForm({...manualForm, nis: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
+                          <div className="flex-1"><label className="block text-xs font-bold mb-1">NIS (Utk Username & Password)</label><input type="text" value={manualForm.nis} onChange={(e) => setManualForm({...manualForm, nis: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
                           <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded text-sm h-[38px]">Simpan</button>
                           <button type="button" onClick={() => setStudentFormMode(null)} className="px-3 py-2 text-indigo-600 font-bold rounded text-sm h-[38px]">Batal</button>
                         </form>
@@ -896,7 +972,7 @@
                         ) : <h1 className="text-2xl md:text-3xl font-bold text-slate-800 mb-2 pr-10">{activeItem.title}</h1>}
                         
                         <div className="flex items-center gap-3 mt-4 flex-wrap mb-8">
-                          <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-md text-xs font-bold uppercase tracking-wider">{activeItem.type}</span>
+                          <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-md text-xs font-bold uppercase tracking-wider">{activeItem.type.replace('_', ' ')}</span>
                           {viewMode === 'teacher' && activeItem.type === 'course' && (
                              <button onClick={() => handleDataChange(activeItem.id, { isLocked: !activeItem.isLocked })} className={`px-3 py-1.5 rounded-md text-xs font-bold flex gap-1 ${activeItem.isLocked ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>{activeItem.isLocked ? <><Lock size={14}/> Dikunci (Siswa)</> : <><Unlock size={14}/> Terbuka (Siswa)</>}</button>
                           )}
@@ -978,23 +1054,57 @@
                                   value={activeItem.content || ''}
                                   onChange={(e) => handleDataChange(activeItem.id, { content: e.target.value })}
                                   className="w-full min-h-[300px] p-4 outline-none resize-y font-mono text-sm bg-slate-50"
-                                  placeholder="Blok teks yang ingin diubah, lalu klik tombol format di atas. Tekan Enter untuk garis baru."
+                                  placeholder="Blok teks yang ingin diubah formatnya, lalu klik tombol format di atas. Tekan Enter untuk membuat baris baru."
                                 />
                               </div>
                             ) : (
                               <div 
                                 className="prose prose-slate max-w-none prose-headings:font-bold prose-a:text-indigo-600"
-                                dangerouslySetInnerHTML={{ __html: (activeItem.content || '').replace(/\n/g, '<br/>') || '<p class="text-slate-400 italic">Belum ada konten.</p>' }}
+                                style={{ whiteSpace: 'pre-wrap' }} 
+                                dangerouslySetInnerHTML={{ __html: activeItem.content || '<p class="text-slate-400 italic">Belum ada konten.</p>' }}
                               />
                             )}
                             
                             {['text', 'document'].includes(activeItem.type) && (
                               <div className="mt-8 pt-6 border-t border-slate-200">
-                                 <h3 className="font-bold text-sm text-slate-700 mb-3">Lampiran File (PDF/Gambar)</h3>
-                                 {viewMode === 'teacher' && <input type="text" placeholder="URL File PDF/Gambar..." value={activeItem.attachment || ''} onChange={(e) => handleDataChange(activeItem.id, { attachment: e.target.value, attachmentType: e.target.value.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image' })} className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500 mb-4" />}
+                                 <h3 className="font-bold text-sm text-slate-700 mb-3">Lampiran File (PDF/Gambar/Google Drive)</h3>
+                                 {viewMode === 'teacher' && (
+                                     <input 
+                                         type="text" 
+                                         placeholder="URL File (Contoh: Link Google Drive atau akhiran .pdf)..." 
+                                         value={activeItem.attachment || ''} 
+                                         onChange={(e) => {
+                                             const val = e.target.value;
+                                             const isPdfOrDrive = val.toLowerCase().endsWith('.pdf') || val.includes('drive.google.com') || val.includes('docs.google.com');
+                                             handleDataChange(activeItem.id, { attachment: val, attachmentType: isPdfOrDrive ? 'pdf' : 'image' });
+                                         }} 
+                                         className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500 mb-4" 
+                                     />
+                                 )}
+                                 
                                  {activeItem.attachment && (
-                                   <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
-                                     {activeItem.attachmentType === 'pdf' ? <iframe src={activeItem.attachment} className="w-full h-[500px]" title="PDF Viewer"></iframe> : <div className="p-4 flex justify-center"><img src={activeItem.attachment} alt="Lampiran" className="max-w-full h-auto rounded-lg shadow-sm" /></div>}
+                                   <div 
+                                     className={`border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex items-center justify-center ${activeItem.attachmentType === 'pdf' ? 'w-full relative shadow-inner' : ''}`} 
+                                     style={activeItem.attachmentType === 'pdf' ? { height: '80vh', minHeight: '500px', WebkitOverflowScrolling: 'touch' } : {}}
+                                   >
+                                     {activeItem.attachmentType === 'pdf' ? (() => {
+                                         let embedUrl = activeItem.attachment;
+                                         if (embedUrl.includes('drive.google.com/file/d/')) {
+                                             const match = embedUrl.match(/[-\w]{25,}/);
+                                             if (match) embedUrl = `https://drive.google.com/file/d/${match[0]}/preview`;
+                                         }
+                                         
+                                         return (
+                                             <iframe 
+                                                 src={embedUrl} 
+                                                 className="absolute top-0 left-0 w-full h-full border-0" 
+                                                 title="Document Viewer" 
+                                                 allowFullScreen
+                                             ></iframe>
+                                         );
+                                     })() : (
+                                         <div className="p-4 flex justify-center"><img src={activeItem.attachment} alt="Lampiran" className="max-w-full h-auto rounded-lg shadow-sm" /></div>
+                                     )}
                                    </div>
                                  )}
                               </div>
@@ -1008,7 +1118,13 @@
                               {viewMode === 'teacher' ? <input type="text" value={activeItem.videoUrl || ''} onChange={(e) => handleDataChange(activeItem.id, { videoUrl: e.target.value })} className="w-full border-2 rounded-lg p-3 outline-none focus:border-indigo-500" placeholder="https://www.youtube.com/watch?v=..." /> : <div className="p-3 bg-slate-100 rounded-lg text-sm text-slate-600 flex items-center gap-2"><LinkIcon size={16} /> {activeItem.videoUrl || 'Belum ada tautan'}</div>}
                             </div>
                             {activeItem.videoUrl?.includes('watch?v=') && (
-                              <div className="aspect-video w-full rounded-xl overflow-hidden shadow-lg bg-black"><iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${activeItem.videoUrl.split('v=')[1].split('&')[0]}`} title="Video" frameBorder="0" allowFullScreen></iframe></div>
+                              <div className="aspect-video w-full rounded-xl overflow-hidden shadow-lg bg-black">
+                                {viewMode === 'student' ? (
+                                   <div ref={ytContainerRef} className="w-full h-full"></div>
+                                ) : (
+                                   <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${activeItem.videoUrl.split('v=')[1].split('&')[0]}`} title="Video" frameBorder="0" allowFullScreen></iframe>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}
@@ -1017,9 +1133,15 @@
 
                         {viewMode === 'student' && ['text', 'video', 'document'].includes(activeItem.type) && (
                           <div className="mt-12 pt-6 border-t border-slate-200 flex justify-end">
-                            <button onClick={() => { if(!completedItems.includes(activeItem.id)) handleUpdateProgress({completedItems: [...completedItems, activeItem.id]}) }} disabled={completedItems.includes(activeItem.id)} className={`px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-md ${completedItems.includes(activeItem.id) ? 'bg-emerald-100 text-emerald-700 shadow-none' : 'bg-indigo-600 hover:bg-indigo-700 text-white transform hover:-translate-y-0.5'}`}>
-                              {completedItems.includes(activeItem.id) ? <><CheckCircle size={20} /> Selesai Dibaca</> : <><Check size={20} /> Tandai Selesai & Lanjut</>}
-                            </button>
+                            {activeItem.type === 'video' && !completedItems.includes(activeItem.id) && !canCompleteVideo ? (
+                               <div className="px-8 py-3 rounded-xl font-bold flex items-center gap-2 bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200">
+                                  <Lock size={20} /> Tonton video minimal 50% untuk lanjut
+                               </div>
+                            ) : (
+                               <button onClick={() => { if(!completedItems.includes(activeItem.id)) handleUpdateProgress({completedItems: [...completedItems, activeItem.id]}) }} disabled={completedItems.includes(activeItem.id)} className={`px-8 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-md ${completedItems.includes(activeItem.id) ? 'bg-emerald-100 text-emerald-700 shadow-none' : 'bg-indigo-600 hover:bg-indigo-700 text-white transform hover:-translate-y-0.5'}`}>
+                                 {completedItems.includes(activeItem.id) ? <><CheckCircle size={20} /> Selesai Dibaca</> : <><Check size={20} /> Tandai Selesai & Lanjut</>}
+                               </button>
+                            )}
                           </div>
                         )}
                     </div>
