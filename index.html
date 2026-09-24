@@ -24,6 +24,10 @@
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
+        
+        /* Tambahan untuk Format Teks (Paragraf & Alignment) saat dilihat siswa */
+        .prose p { margin-bottom: 1rem; line-height: 1.6; }
+        .prose div { margin-bottom: 0.5rem; }
     </style>
 </head>
 <body class="bg-slate-50 font-sans text-slate-800 h-screen overflow-hidden">
@@ -49,16 +53,15 @@
         // =========================================================================
         // 🔴🔴🔴 PENTING: ISI DATABASE FIREBASE ANDA DI BAWAH INI 🔴🔴🔴
         // =========================================================================
-        // Masukkan API Key dan detail Firebase Anda ke dalam kurung kurawal di bawah ini.
-        // Jika Anda membiarkannya kosong, aplikasi akan berjalan offline (data tidak tersimpan).
+        // Ganti bagian di bawah ini dengan Kunci API dari Langkah 1 & 3 Panduan
         const myFirebaseConfig = {
-         apiKey: "AIzaSyAO8Pj2d7Wt8X6mfrLudZEIZxV4CTziXUI",
+          apiKey: "AIzaSyAO8Pj2d7Wt8X6mfrLudZEIZxV4CTziXUI",
   authDomain: "lumina-lms-4e451.firebaseapp.com",
   projectId: "lumina-lms-4e451",
   storageBucket: "lumina-lms-4e451.firebasestorage.app",
   messagingSenderId: "443356880708",
   appId: "1:443356880708:web:f3b37a1aeb9cfc57f70111",
-  measurementId: "G-KWXHYGY23F"  
+  measurementId: "G-KWXHYGY23F" 
         };
         // =========================================================================
 
@@ -72,19 +75,19 @@
         const app = finalFirebaseConfig ? initializeApp(finalFirebaseConfig) : null;
         const auth = app ? getAuth(app) : null;
         const db = app ? getFirestore(app) : null;
-        const appId = 'lumina-online-db'; // ID Cloud Statis agar selalu terhubung
+        const appId = 'lumina-online-db'; 
 
         const INITIAL_DATA = [
           {
-            id: 'c1', type: 'course', title: 'Kursus 1: Pemrograman Web', isOpen: true, isLocked: false,
+            id: 'c1', type: 'course', title: 'Kursus 1: Contoh Materi', isOpen: true, isLocked: false,
             items: [
               {
                 id: 'm1', type: 'module', title: 'Modul 1: Pengenalan', isOpen: true,
                 items: [
                   { id: 'm1-1', type: 'text', title: 'Selamat Datang', content: 'Selamat datang di kursus ini.', attachment: null, attachmentType: null },
                   { 
-                    id: 'm1-2', type: 'quiz', title: 'Kuis 1',
-                    questions: [{ id: 'q1', type: 'multiple_choice', question: 'Apa ibu kota Indonesia?', options: ['Jakarta', 'Bandung', 'Surabaya', 'Medan', 'Bali'], correctAnswer: 'Jakarta', explanation: 'Jakarta adalah ibu kota negara Republik Indonesia.' }]
+                    id: 'm1-2', type: 'quiz', title: 'Kuis Latihan',
+                    questions: [{ id: 'q1', type: 'multiple_choice', question: 'Apa ibu kota Indonesia?', options: ['Jakarta', 'Bandung', 'Surabaya'], correctAnswer: 'Jakarta', explanation: 'Jakarta adalah ibu kota negara Republik Indonesia.' }]
                   }
                 ]
               }
@@ -106,7 +109,7 @@
 
           const [viewMode, setViewMode] = useState('teacher'); 
           const [activeMainTab, setActiveMainTab] = useState('curriculum'); 
-          const [studentSession, setStudentSession] = useState(null); // Menyimpan Info Siswa Login
+          const [studentSession, setStudentSession] = useState(null);
           
           const [data, setData] = useState(INITIAL_DATA);
           const [students, setStudents] = useState(INITIAL_STUDENTS);
@@ -118,6 +121,8 @@
           const [completedItems, setCompletedItems] = useState([]);
           const [studentAnswers, setStudentAnswers] = useState({});
           const [quizResults, setQuizResults] = useState({});
+          const [sumatifCooldowns, setSumatifCooldowns] = useState({});
+          const [currentTime, setCurrentTime] = useState(Date.now());
           
           const [studentFormMode, setStudentFormMode] = useState(null);
           const [manualForm, setManualForm] = useState({ name: '', nis: '' });
@@ -127,6 +132,13 @@
 
           const generateId = () => Math.random().toString(36).substr(2, 9);
 
+          // Timer for Sumatif Cooldown
+          useEffect(() => {
+             const timer = setInterval(() => setCurrentTime(Date.now()), 60000);
+             return () => clearInterval(timer);
+          }, []);
+
+          // Init Auth
           useEffect(() => {
             if (!auth) return;
             const initAuth = async () => {
@@ -142,10 +154,10 @@
             return onAuthStateChanged(auth, (user) => setFirebaseUser(user));
           }, []);
 
+          // Sync with Firestore
           useEffect(() => {
             if (!firebaseUser || !db) return;
             
-            // Listener Data Publik (Guru & Siswa)
             const unsubData = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'curriculum'), (docSnap) => {
               if (docSnap.exists()) setData(docSnap.data().tree || []);
               else handleSetData(INITIAL_DATA);
@@ -160,8 +172,6 @@
               if (docSnap.exists()) setSubmissions(docSnap.data().list || []);
             });
 
-            // Listener Data Privat Progress (Siswa / Guru)
-            // Menggunakan NIS sebagai identifier progress di database agar stabil
             const activeUserId = (viewMode === 'student' && studentSession) ? studentSession.nis : firebaseUser.uid;
             
             const unsubProgress = onSnapshot(doc(db, 'artifacts', appId, 'users', activeUserId, 'lumina_progress', 'state'), (docSnap) => {
@@ -170,6 +180,7 @@
                 setCompletedItems(d.completedItems || []);
                 setStudentAnswers(d.studentAnswers || {});
                 setQuizResults(d.quizResults || {});
+                setSumatifCooldowns(d.sumatifCooldowns || {});
               }
             });
 
@@ -188,17 +199,19 @@
             setSubmissions(newSubmissions);
             if (firebaseUser && db) setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'submissions'), { list: newSubmissions });
           };
+          
           const handleUpdateProgress = (partialUpdate) => {
             const nextCompleted = partialUpdate.completedItems !== undefined ? partialUpdate.completedItems : completedItems;
             const nextAnswers = partialUpdate.studentAnswers !== undefined ? partialUpdate.studentAnswers : studentAnswers;
             const nextResults = partialUpdate.quizResults !== undefined ? partialUpdate.quizResults : quizResults;
+            const nextCooldowns = partialUpdate.sumatifCooldowns !== undefined ? partialUpdate.sumatifCooldowns : sumatifCooldowns;
             
-            setCompletedItems(nextCompleted); setStudentAnswers(nextAnswers); setQuizResults(nextResults);
+            setCompletedItems(nextCompleted); setStudentAnswers(nextAnswers); setQuizResults(nextResults); setSumatifCooldowns(nextCooldowns);
 
             if (firebaseUser && db) {
               const activeUserId = (viewMode === 'student' && studentSession) ? studentSession.nis : firebaseUser.uid;
               setDoc(doc(db, 'artifacts', appId, 'users', activeUserId, 'lumina_progress', 'state'), {
-                completedItems: nextCompleted, studentAnswers: nextAnswers, quizResults: nextResults
+                completedItems: nextCompleted, studentAnswers: nextAnswers, quizResults: nextResults, sumatifCooldowns: nextCooldowns
               }, { merge: true });
             }
           };
@@ -206,30 +219,13 @@
           const handleLogin = (e) => {
             e.preventDefault();
             if (username === 'guru' && password === '19882026') {
-              // Login Guru
-              setIsLoggedIn(true);
-              setViewMode('teacher');
-              setActiveMainTab('curriculum');
-              setLoginError('');
+              setIsLoggedIn(true); setViewMode('teacher'); setActiveMainTab('curriculum'); setLoginError('');
             } else {
-              // Login Siswa: Verifikasi Username=NIS, Password=NIS dari database siswa
               const matchedStudent = students.find(s => s.nis === username && s.nis === password);
-              
               if (matchedStudent) {
-                setStudentSession(matchedStudent);
-                setIsLoggedIn(true);
-                setViewMode('student');
-                setActiveStudentCourseId(null);
-                setActiveMainTab('curriculum');
-                setLoginError('');
+                setStudentSession(matchedStudent); setIsLoggedIn(true); setViewMode('student'); setActiveStudentCourseId(null); setActiveMainTab('curriculum'); setLoginError('');
               } else if (username === 'siswa' && password === 'siswa123') {
-                // Fallback / Demo jika belum ada siswa di database
-                setStudentSession({ name: 'Siswa Demo', nis: '9999' });
-                setIsLoggedIn(true);
-                setViewMode('student');
-                setActiveStudentCourseId(null);
-                setActiveMainTab('curriculum');
-                setLoginError('');
+                setStudentSession({ name: 'Siswa Demo', nis: '9999' }); setIsLoggedIn(true); setViewMode('student'); setActiveStudentCourseId(null); setActiveMainTab('curriculum'); setLoginError('');
               } else {
                 setLoginError('Kredensial salah! Gunakan NIS Anda untuk Username dan Password.');
               }
@@ -239,7 +235,7 @@
           const handleLogout = () => {
             setIsLoggedIn(false); setUsername(''); setPassword('');
             setActiveItemId(null); setActiveStudentCourseId(null); setStudentSession(null);
-            setCompletedItems([]); setStudentAnswers({}); setQuizResults({});
+            setCompletedItems([]); setStudentAnswers({}); setQuizResults({}); setSumatifCooldowns({});
           };
 
           const showConfirm = (message, onConfirm) => setConfirmModal({ isOpen: true, message, onConfirm });
@@ -258,7 +254,7 @@
           const getFlatActionableItems = (items) => {
             let flatList = [];
             items.forEach(item => {
-              if (['text', 'video', 'document', 'quiz'].includes(item.type)) flatList.push(item);
+              if (['text', 'video', 'document', 'quiz', 'quiz_sumatif'].includes(item.type)) flatList.push(item);
               if (item.items && item.items.length > 0) flatList = flatList.concat(getFlatActionableItems(item.items));
             });
             return flatList;
@@ -286,7 +282,7 @@
 
           const isNodeLocked = (node) => {
             if (viewMode === 'teacher') return false;
-            if (['text', 'video', 'document', 'quiz'].includes(node.type)) return isItemLocked(node.id);
+            if (['text', 'video', 'document', 'quiz', 'quiz_sumatif'].includes(node.type)) return isItemLocked(node.id);
             if (node.items && node.items.length > 0) {
               const nodeActionables = getFlatActionableItems(node.items);
               if (nodeActionables.length > 0) return isItemLocked(nodeActionables[0].id);
@@ -312,9 +308,9 @@
 
           const handleAddItem = (parentId, type) => {
             const newItem = {
-              id: generateId(), type: type, title: type === 'folder' ? 'Folder Baru' : type === 'module' ? 'Modul Baru' : `Materi ${type} Baru`, content: '',
+              id: generateId(), type: type, title: type === 'folder' ? 'Folder Baru' : type === 'module' ? 'Modul Baru' : (type === 'quiz_sumatif' ? 'Kuis Sumatif Baru' : `Materi ${type} Baru`), content: '',
               ...(type === 'folder' || type === 'module' ? { isOpen: true, items: [] } : {}),
-              ...(type === 'quiz' ? { questions: [] } : {})
+              ...(type === 'quiz' || type === 'quiz_sumatif' ? { questions: [] } : {})
             };
             const updateNode = (nodes) => nodes.map(node => {
               if (node.id === parentId) return { ...node, isOpen: true, items: [...(node.items || []), newItem] };
@@ -398,7 +394,7 @@
               const isActive = node.id === activeItemId;
               const isLocked = isNodeLocked(node);
               const isCompleted = completedItems.includes(node.id);
-              const isActionableNode = ['text', 'video', 'document', 'quiz'].includes(node.type);
+              const isActionableNode = ['text', 'video', 'document', 'quiz', 'quiz_sumatif'].includes(node.type);
               
               let Icon = FileText;
               if (node.type === 'course') Icon = Library;
@@ -406,12 +402,14 @@
               else if (node.type === 'folder') Icon = Folder;
               else if (node.type === 'video') Icon = PlaySquare;
               else if (node.type === 'quiz') Icon = CheckSquare;
+              else if (node.type === 'quiz_sumatif') Icon = Award;
               else if (node.type === 'document') Icon = FileUp;
 
               let typeColor = 'text-slate-500';
               if (node.type === 'course') typeColor = 'text-slate-800';
               else if (node.type === 'module') typeColor = 'text-indigo-600';
               else if (node.type === 'quiz') typeColor = 'text-purple-500';
+              else if (node.type === 'quiz_sumatif') typeColor = 'text-rose-600';
               
               if (isLocked && viewMode === 'student') typeColor = 'text-slate-400';
 
@@ -458,6 +456,7 @@
           };
 
           const renderQuizEditor = (item) => {
+            const isSumatif = item.type === 'quiz_sumatif';
             const questions = item.questions || [];
             
             const updateQuestion = (qId, changes) => {
@@ -481,10 +480,19 @@
                const maxScore = questions.length > 0 ? questions.length : 1;
                const finalScore = Math.round((correctCount / maxScore) * 100);
 
-               handleUpdateProgress({
-                  quizResults: { ...quizResults, [item.id]: finalScore },
-                  completedItems: [...completedItems, item.id]
-               });
+               let updates = { quizResults: { ...quizResults, [item.id]: finalScore } };
+               
+               if (isSumatif) {
+                  // Jika Kuis Sumatif, nilai harus 100 baru tamat. Jika gagal, set cooldown 2 jam (7200000 ms)
+                  if (finalScore === 100) {
+                     updates.completedItems = [...completedItems, item.id];
+                  } else {
+                     updates.sumatifCooldowns = { ...sumatifCooldowns, [item.id]: Date.now() };
+                  }
+               } else {
+                  updates.completedItems = [...completedItems, item.id];
+               }
+               handleUpdateProgress(updates);
 
                const studentName = studentSession ? studentSession.name : 'Siswa Demo';
                const studentNis = studentSession ? studentSession.nis : 'Demo';
@@ -531,13 +539,13 @@
                         </div>
                         
                         {viewMode === 'teacher' ? (
-                  <>
-                    <textarea value={q.question} onChange={(e) => updateQuestion(q.id, {question: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[80px] mb-2" placeholder="Ketik pertanyaan..." />
-                    {(q.question.includes('[LATEX:') || q.question.length > 0) && (
-                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800"><span className="font-bold text-slate-500 text-xs block mb-1">Preview Soal:</span>{renderTextWithLatex(q.question)}</div>
-                    )}
-                  </>
-                ) : <div className="text-slate-800 font-medium">{renderTextWithLatex(q.question)}</div>}
+                          <>
+                            <textarea value={q.question} onChange={(e) => updateQuestion(q.id, {question: e.target.value})} className="w-full border border-slate-300 rounded-lg p-2 text-sm outline-none focus:border-indigo-500 min-h-[80px] mb-2" placeholder="Ketik pertanyaan..." />
+                            {(q.question.includes('[LATEX:') || q.question.length > 0) && (
+                              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800"><span className="font-bold text-slate-500 text-xs block mb-1">Preview Soal:</span>{renderTextWithLatex(q.question)}</div>
+                            )}
+                          </>
+                        ) : <div className="text-slate-800 font-medium">{renderTextWithLatex(q.question)}</div>}
                         
                         {q.imageUrl && (
                           <div className="mt-3 relative inline-block max-w-full">
@@ -631,7 +639,7 @@
                           <label className="block text-xs font-bold text-slate-500 mb-1">Pembahasan (Muncul setelah siswa submit):</label>
                           <textarea value={q.explanation || ''} onChange={(e) => updateQuestion(q.id, {explanation: e.target.value})} className="w-full border border-amber-200 bg-amber-50/30 rounded-lg p-2 text-sm outline-none min-h-[60px]" placeholder="Tulis penjelasan..." />
                         </div>
-                      ) : quizResults[item.id] !== undefined && (
+                      ) : quizResults[item.id] !== undefined && !isSumatif && (
                         <div className="mt-3">
                           {q.type !== 'essay' && (
                              <div className={`p-2 text-sm rounded border ${ (q.type === 'multiple_choice' || q.type === 'true_false' ? (studentAnswers[`${item.id}-${q.id}`] === q.correctAnswer) : true) ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
@@ -658,9 +666,39 @@
                 )}
 
                 {viewMode === 'student' && quizResults[item.id] !== undefined && (
-                  <div className="p-6 bg-green-50 border border-green-200 rounded-xl text-center mt-6">
-                    <h2 className="text-2xl font-bold text-green-700 mb-2">Selesai!</h2>
-                    <div className="text-4xl font-extrabold text-indigo-700 bg-white inline-block px-6 py-4 rounded-full shadow-sm border-4 border-indigo-100">Nilai: {quizResults[item.id]}</div>
+                  <div className={`p-6 border rounded-xl text-center mt-6 ${isSumatif && quizResults[item.id] < 100 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                    <h2 className={`text-2xl font-bold mb-2 ${isSumatif && quizResults[item.id] < 100 ? 'text-red-700' : 'text-green-700'}`}>
+                      {isSumatif && quizResults[item.id] < 100 ? 'Belum Mencapai Nilai Maksimal' : 'Selesai!'}
+                    </h2>
+                    <div className={`text-4xl font-extrabold bg-white inline-block px-6 py-4 rounded-full shadow-sm border-4 ${isSumatif && quizResults[item.id] < 100 ? 'text-red-700 border-red-100' : 'text-indigo-700 border-indigo-100'}`}>Nilai: {quizResults[item.id]}</div>
+                    
+                    {isSumatif && quizResults[item.id] < 100 && (() => {
+                       const cooldownEnd = sumatifCooldowns[item.id] ? sumatifCooldowns[item.id] + (2 * 60 * 60 * 1000) : 0;
+                       const canRetake = currentTime >= cooldownEnd;
+                       const remainingMs = cooldownEnd - currentTime;
+                       const remainingMinutes = Math.ceil(remainingMs / 60000);
+                       const remainingHours = Math.floor(remainingMinutes / 60);
+                       const remainingMinsDisplay = remainingMinutes % 60;
+                       
+                       return (
+                         <div className="mt-6 pt-6 border-t border-red-100">
+                           <p className="text-sm text-red-600 mb-3 font-medium">Syarat kelulusan Kuis Sumatif adalah nilai 100. Anda harus mengulang kuis ini.</p>
+                           {canRetake ? (
+                              <button onClick={() => {
+                                 const nextResults = {...quizResults}; delete nextResults[item.id];
+                                 const nextAnswers = {...studentAnswers};
+                                 questions.forEach(q => { delete nextAnswers[`${item.id}-${q.id}`] });
+                                 handleUpdateProgress({ quizResults: nextResults, studentAnswers: nextAnswers });
+                              }} className="px-6 py-3 bg-red-600 text-white font-bold rounded-lg shadow-md hover:bg-red-700">Ulangi Kuis Sumatif Sekarang</button>
+                           ) : (
+                              <div className="inline-block bg-red-100 text-red-700 px-4 py-2 rounded-lg font-bold text-sm">
+                                <Lock size={14} className="inline mr-2"/>
+                                Bisa diulang dalam: {remainingHours > 0 ? `${remainingHours} jam ` : ''}{remainingMinsDisplay} menit
+                              </div>
+                           )}
+                         </div>
+                       );
+                    })()}
                   </div>
                 )}
               </div>
@@ -680,13 +718,11 @@
                   <div className="p-8">
                     {loginError && <div className="mb-6 p-4 bg-red-50 text-red-600 text-sm font-medium rounded-lg border border-red-200 flex items-start gap-2"><X size={16} className="mt-0.5 shrink-0"/>{loginError}</div>}
                     
-                    <p className="text-sm font-semibold text-slate-500 mb-4 text-center">LOGIN SISWA: Gunakan NIS Anda sebagai Username dan Password.</p>
-                    
                     <form onSubmit={handleLogin} className="space-y-4">
                       <div>
                         <input 
                           type="text" 
-                          placeholder="Username (atau NIS)"
+                          placeholder="Username"
                           value={username} 
                           onChange={(e) => setUsername(e.target.value)} 
                           className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" 
@@ -696,7 +732,7 @@
                       <div>
                         <input 
                           type="password" 
-                          placeholder="Password (atau NIS)"
+                          placeholder="Password"
                           value={password} 
                           onChange={(e) => setPassword(e.target.value)} 
                           className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" 
@@ -866,7 +902,7 @@
                           )}
                           {viewMode === 'teacher' && !['course', 'module', 'folder'].includes(activeItem.type) && (
                             <select value={activeItem.type} onChange={(e) => handleDataChange(activeItem.id, { type: e.target.value })} className="text-xs font-bold border rounded-md px-2 py-1 outline-none">
-                              <option value="text">Ubah ke: Teks</option><option value="video">Ubah ke: Video</option><option value="document">Ubah ke: Dokumen</option><option value="quiz">Ubah ke: Kuis</option>
+                              <option value="text">Ubah ke: Teks</option><option value="video">Ubah ke: Video</option><option value="document">Ubah ke: Dokumen</option><option value="quiz">Ubah ke: Kuis Latihan</option><option value="quiz_sumatif">Ubah ke: Kuis Sumatif</option>
                             </select>
                           )}
                           {completedItems.includes(activeItem.id) && <span className="flex items-center gap-1 text-xs font-bold text-emerald-600 uppercase tracking-wider bg-emerald-50 px-3 py-1 rounded-md"><CheckCircle size={14} /> Selesai</span>}
@@ -883,6 +919,7 @@
                                     <button onClick={() => handleAddItem(activeItem.id, 'video')} className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm font-bold flex gap-1"><PlaySquare size={16}/> + Video</button>
                                     <button onClick={() => handleAddItem(activeItem.id, 'document')} className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-sm font-bold flex gap-1"><FileUp size={16}/> + Dokumen</button>
                                     <button onClick={() => handleAddItem(activeItem.id, 'quiz')} className="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-sm font-bold flex gap-1"><CheckSquare size={16}/> + Kuis</button>
+                                    <button onClick={() => handleAddItem(activeItem.id, 'quiz_sumatif')} className="px-3 py-1.5 bg-rose-100 text-rose-700 rounded-lg text-sm font-bold flex gap-1"><Award size={16}/> + Sumatif</button>
                                   </>
                                 )}
                              </div>
@@ -976,7 +1013,7 @@
                           </div>
                         )}
 
-                        {activeItem.type === 'quiz' && renderQuizEditor(activeItem)}
+                        {['quiz', 'quiz_sumatif'].includes(activeItem.type) && renderQuizEditor(activeItem)}
 
                         {viewMode === 'student' && ['text', 'video', 'document'].includes(activeItem.type) && (
                           <div className="mt-12 pt-6 border-t border-slate-200 flex justify-end">
