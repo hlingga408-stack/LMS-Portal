@@ -54,13 +54,13 @@
         // 🔴🔴🔴 PENTING: ISI DATABASE FIREBASE ANDA DI BAWAH INI 🔴🔴🔴
         // =========================================================================
         const myFirebaseConfig = {
-           apiKey: "AIzaSyAO8Pj2d7Wt8X6mfrLudZEIZxV4CTziXUI",
+          apiKey: "AIzaSyAO8Pj2d7Wt8X6mfrLudZEIZxV4CTziXUI",
   authDomain: "lumina-lms-4e451.firebaseapp.com",
   projectId: "lumina-lms-4e451",
   storageBucket: "lumina-lms-4e451.firebasestorage.app",
   messagingSenderId: "443356880708",
   appId: "1:443356880708:web:f3b37a1aeb9cfc57f70111",
-  measurementId: "G-KWXHYGY23F"
+  measurementId: "G-KWXHYGY23F" 
         };
         // =========================================================================
 
@@ -532,10 +532,8 @@
             printWindow.document.open(); printWindow.document.write(htmlContent); printWindow.document.close();
           };
 
-          // Helper untuk menghitung jumlah Modul di Dasbor Siswa
           const countModules = (nodes) => nodes ? nodes.reduce((acc, node) => acc + (node.type === 'module' ? 1 : 0) + (node.items ? countModules(node.items) : 0), 0) : 0;
           
-          // Helper untuk mendapatkan semua kuis di dalam sebuah kursus untuk Papan Rekap
           const getQuizzesFromNodes = (nodes) => {
              let quizzes = [];
              if (!nodes) return quizzes;
@@ -624,20 +622,14 @@
             if (!text) return null;
             if (typeof text !== 'string') return text;
             
-            let processed = text
-                .replace(/\$\$(.*?)\$\$/g, '[LATEX:$1]')
-                .replace(/\\\((.*?)\\\)/g, '[LATEX:$1]')
-                .replace(/\\\[(.*?)\\\]/g, '[LATEX:$1]');
+            let processedHtml = text
+                .replace(/\$\$(.*?)\$\$/g, (m, p1) => `<img src="https://latex.codecogs.com/svg.latex?\\color{black}\\Large&space;${encodeURIComponent(p1.trim())}" class="inline-block mx-1 align-middle max-h-16 pointer-events-none" alt="formula"/>`)
+                .replace(/\\\((.*?)\\\)/g, (m, p1) => `<img src="https://latex.codecogs.com/svg.latex?\\color{black}\\Large&space;${encodeURIComponent(p1.trim())}" class="inline-block mx-1 align-middle max-h-16 pointer-events-none" alt="formula"/>`)
+                .replace(/\\\[(.*?)\\\]/g, (m, p1) => `<img src="https://latex.codecogs.com/svg.latex?\\color{black}\\Large&space;${encodeURIComponent(p1.trim())}" class="inline-block mx-1 align-middle max-h-16 pointer-events-none" alt="formula"/>`);
 
-            const parts = processed.split(/\[LATEX:(.*?)\]/g);
-            return parts.map((part, i) => {
-               if (i % 2 === 1) {
-                  const cleanLatex = part.trim();
-                  const enc = encodeURIComponent(cleanLatex);
-                  return <img key={i} src={`https://latex.codecogs.com/svg.latex?\\color{black}\\Large&space;${enc}`} alt="Formula" className="inline-block mx-1 align-middle max-h-16 object-contain pointer-events-none" />;
-               }
-               return <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part}</span>;
-            });
+            processedHtml = processedHtml.replace(/\n/g, '<br/>');
+
+            return <span dangerouslySetInnerHTML={{ __html: processedHtml }} />;
           };
 
           const renderSingleQuestionEditor = (q, index, updateFn, deleteFn, isBankItem = false, itemProps = {}) => {
@@ -977,7 +969,7 @@
                                     <span className="text-xs font-bold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded uppercase tracking-wider">{q.material || 'Umum'} {q.subMaterial ? ` > ${q.subMaterial}` : ''}</span>
                                     <span className="text-xs font-bold text-slate-400 border px-2 py-0.5 rounded uppercase">{q.type.replace('_', ' ')}</span>
                                  </div>
-                                 <div className="text-sm font-medium text-slate-700 line-clamp-2 mt-2">{q.question.replace(/\[LATEX:.*?\]|\$\$.*?\$\$|\\\(.*?\\\)|\\\[.*?\\\]/g, '[Formula]')}</div>
+                                 <div className="text-sm font-medium text-slate-700 line-clamp-2 mt-2">{renderTextWithLatex(q.question)}</div>
                               </div>
                            </label>
                         ))
@@ -1188,7 +1180,6 @@
                         })}
                       </div>
 
-                      {/* BAGIAN BARU: REKAP NILAI KUIS DI DASBOR SISWA */}
                       <div className="mt-16">
                         <h2 className="text-2xl font-extrabold text-slate-800 mb-6 flex items-center gap-2"><Award size={24} className="text-rose-600"/> Papan Rekap Nilai Kuis</h2>
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
@@ -1222,7 +1213,6 @@
                              );
                           })}
                           
-                          {/* Jika tidak ada satupun kursus yang memiliki kuis */}
                           {data.filter(c => c.type === 'course').every(c => getQuizzesFromNodes(c.items || []).length === 0) && (
                              <div className="text-center py-8">
                                 <Award size={48} className="mx-auto text-slate-200 mb-3"/>
@@ -1337,11 +1327,8 @@
                                 />
                               </div>
                             ) : (
-                              <div 
-                                className="prose prose-slate max-w-none prose-headings:font-bold prose-a:text-indigo-600 leading-relaxed"
-                                style={{ whiteSpace: 'pre-wrap' }} 
-                              >
-                                {renderTextWithLatex((activeItem.content || '').replace(/\n/g, '<br/>') || '<p class="text-slate-400 italic">Belum ada konten.</p>')}
+                              <div className="prose prose-slate max-w-none prose-headings:font-bold prose-a:text-indigo-600 leading-relaxed">
+                                {renderTextWithLatex(activeItem.content || '<p class="text-slate-400 italic">Belum ada konten.</p>')}
                               </div>
                             )}
                             
@@ -1398,11 +1385,11 @@
                               {viewMode === 'teacher' ? <input type="text" value={activeItem.videoUrl || ''} onChange={(e) => handleDataChange(activeItem.id, { videoUrl: e.target.value })} className="w-full border-2 rounded-lg p-3 outline-none focus:border-indigo-500" placeholder="https://www.youtube.com/watch?v=..." /> : <div className="p-3 bg-slate-100 rounded-lg text-sm text-slate-600 flex items-center gap-2"><LinkIcon size={16} /> {activeItem.videoUrl || 'Belum ada tautan'}</div>}
                             </div>
                             {activeItem.videoUrl?.includes('watch?v=') && (
-                              <div className="aspect-video w-full rounded-xl overflow-hidden shadow-lg bg-black">
+                              <div className="aspect-video w-full rounded-xl overflow-hidden shadow-lg bg-black relative">
                                 {viewMode === 'student' ? (
-                                   <div ref={ytContainerRef} className="w-full h-full"></div>
+                                   <div ref={ytContainerRef} className="absolute inset-0 w-full h-full"></div>
                                 ) : (
-                                   <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${activeItem.videoUrl.split('v=')[1].split('&')[0]}`} title="Video" frameBorder="0" allowFullScreen></iframe>
+                                   <iframe className="absolute inset-0 w-full h-full" src={`https://www.youtube.com/embed/${activeItem.videoUrl.split('v=')[1].split('&')[0]}`} title="Video" frameBorder="0" allowFullScreen></iframe>
                                 )}
                               </div>
                             )}
