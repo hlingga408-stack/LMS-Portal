@@ -43,12 +43,14 @@
           BookOpen, CheckCircle, ChevronDown, ChevronRight, ChevronUp, FileText, 
           Folder, PlaySquare, Plus, CheckSquare, Trash2, Users, FileUp, 
           X, Image as ImageIcon, Link as LinkIcon, Lock, Unlock, LogOut, 
-          Check, Library, Award, FileSpreadsheet, Printer, Database, Table
+          Check, Library, Award, FileSpreadsheet, Printer, Database, Table,
+          UploadCloud, Copy
         } from 'https://esm.sh/lucide-react@0.292.0';
 
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // =========================================================================
         // 🔴🔴🔴 PENTING: ISI DATABASE FIREBASE ANDA DI BAWAH INI 🔴🔴🔴
@@ -61,7 +63,6 @@
   messagingSenderId: "443356880708",
   appId: "1:443356880708:web:f3b37a1aeb9cfc57f70111",
   measurementId: "G-KWXHYGY23F"
-
         };
         // =========================================================================
 
@@ -75,6 +76,7 @@
         const app = finalFirebaseConfig ? initializeApp(finalFirebaseConfig) : null;
         const auth = app ? getAuth(app) : null;
         const db = app ? getFirestore(app) : null;
+        const storage = app ? getStorage(app) : null;
         const appId = 'lumina-online-db'; 
 
         const INITIAL_DATA = [
@@ -108,7 +110,7 @@
           const [loginError, setLoginError] = useState('');
 
           const [viewMode, setViewMode] = useState('teacher'); 
-          const [activeMainTab, setActiveMainTab] = useState('curriculum'); 
+          const [activeMainTab, setActiveMainTab] = useState('dashboard'); // Diubah default ke dashboard
           const [studentSession, setStudentSession] = useState(null);
           
           const [data, setData] = useState(INITIAL_DATA);
@@ -132,6 +134,13 @@
           const [bankImportMode, setBankImportMode] = useState(false);
           const [bankImportText, setBankImportText] = useState('');
           
+          // State untuk Firebase Storage PDF Upload
+          const [uploadFile, setUploadFile] = useState(null);
+          const [uploadProgress, setUploadProgress] = useState(0);
+          const [uploadStatus, setUploadStatus] = useState(''); 
+          const [uploadedUrl, setUploadedUrl] = useState('');
+          const fileInputRef = useRef(null);
+
           const [confirmModal, setConfirmModal] = useState({ isOpen: false, message: '', onConfirm: null });
           const [promptModal, setPromptModal] = useState({ isOpen: false, title: '', placeholder: '', type: 'text', onConfirm: null });
           const [bankSelector, setBankSelector] = useState({ isOpen: false, targetQuizId: null, selectedIds: [] }); 
@@ -150,6 +159,7 @@
 
           const activeItem = activeItemId ? findNode(data, activeItemId) : null;
 
+          // LOGIKA DETEKTOR YOUTUBE 50% DIPERBAIKI (TOMBOL BISA DIKLIK)
           useEffect(() => {
             if (viewMode !== 'student' || activeItem?.type !== 'video' || !activeItem?.videoUrl) {
               setCanCompleteVideo(true);
@@ -170,16 +180,25 @@
               const videoId = activeItem.videoUrl.split('v=')[1]?.split('&')[0];
               if (!videoId) return;
 
+              // Kosongkan kontainer sebelum membuat IFrame baru agar tidak menumpuk
+              ytContainerRef.current.innerHTML = '';
+
               player = new window.YT.Player(ytContainerRef.current, {
                 videoId: videoId,
                 width: '100%',
                 height: '100%',
-                playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1 },
+                playerVars: { 
+                  'autoplay': 0, 
+                  'controls': 1, 
+                  'rel': 0, 
+                  'playsinline': 1,
+                  'modestbranding': 1 // Tampilan lebih bersih
+                },
                 events: {
                   'onStateChange': (event) => {
                     if (event.data === window.YT.PlayerState.PLAYING) {
                       interval = setInterval(() => {
-                        if (player && player.getCurrentTime) {
+                        if (player && typeof player.getCurrentTime === 'function') {
                           const currentTime = player.getCurrentTime();
                           const duration = player.getDuration();
                           if (duration > 0 && (currentTime / duration) >= 0.5) {
@@ -300,7 +319,7 @@
           const handleLogin = (e) => {
             e.preventDefault();
             if (username === 'guru' && password === '19882026') {
-              setIsLoggedIn(true); setViewMode('teacher'); setActiveMainTab('curriculum'); setLoginError('');
+              setIsLoggedIn(true); setViewMode('teacher'); setActiveMainTab('dashboard'); setLoginError('');
             } else {
               const matchedStudent = students.find(s => s.nis === username && s.nis === password);
               if (matchedStudent) {
@@ -531,6 +550,67 @@
               </body></html>
             `;
             printWindow.document.open(); printWindow.document.write(htmlContent); printWindow.document.close();
+          };
+
+          // ==========================================
+          // LOGIKA UPLOAD FIREBASE STORAGE
+          // ==========================================
+          const handleFileUpload = async () => {
+             if (!uploadFile) return;
+             if (!storage) {
+                showConfirm('Firebase Storage belum dikonfigurasi di source code Anda. Mohon pastikan kunci API sudah benar.', ()=>{});
+                return;
+             }
+
+             setUploadStatus('uploading');
+             setUploadProgress(0);
+
+             // Penamaan file unik agar tidak tertimpa
+             const uniqueFileName = `${Date.now()}_${uploadFile.name.replace(/\s+/g, '_')}`;
+             const storageRef = ref(storage, `artifacts/${appId}/public/files/${uniqueFileName}`);
+             
+             const uploadTask = uploadBytesResumable(storageRef, uploadFile);
+
+             uploadTask.on('state_changed', 
+                (snapshot) => {
+                   const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                   setUploadProgress(progress);
+                }, 
+                (error) => {
+                   console.error("Storage Error:", error);
+                   setUploadStatus('error');
+                   showConfirm('Gagal mengunggah. Pastikan pengaturan Rules di Firebase Storage Anda mengizinkan read/write (Lihat buku panduan).', () => {});
+                }, 
+                async () => {
+                   try {
+                      const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                      setUploadedUrl(downloadURL);
+                      setUploadStatus('success');
+                      setUploadFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                   } catch (err) {
+                      console.error(err);
+                      setUploadStatus('error');
+                      showConfirm('Gagal mendapatkan tautan file.', () => {});
+                   }
+                }
+             );
+          };
+
+          const handleCopyUrl = () => {
+             if (uploadedUrl) {
+                const textArea = document.createElement("textarea");
+                textArea.value = uploadedUrl;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                   document.execCommand('copy');
+                   showConfirm('Tautan berhasil disalin! Sekarang buka menu "Kelola Modul", buat Materi Dokumen, dan Paste tautan ini di sana.', () => {});
+                } catch (err) {
+                   showConfirm('Gagal menyalin otomatis. Silakan blok tautannya dan salin (Copy) secara manual.', () => {});
+                }
+                document.body.removeChild(textArea);
+             }
           };
 
           const countModules = (nodes) => nodes ? nodes.reduce((acc, node) => acc + (node.type === 'module' ? 1 : 0) + (node.items ? countModules(node.items) : 0), 0) : 0;
@@ -997,6 +1077,7 @@
                 </div>
               )}
 
+              {/* TAMPILAN HEADER YANG BERSIH SESUAI REQUEST TERAKHIR */}
               <header className="h-16 border-b border-slate-200 px-6 flex items-center justify-between bg-white shrink-0 shadow-sm z-10 print:hidden">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><BookOpen size={18} className="text-white" /></div>
@@ -1005,10 +1086,7 @@
 
                 {viewMode === 'teacher' && (
                   <div className="flex gap-2 lg:gap-4 overflow-x-auto">
-                    <button onClick={() => setActiveMainTab('curriculum')} className={`flex items-center gap-2 px-3 py-2 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${activeMainTab === 'curriculum' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>Kelola Modul</button>
-                    <button onClick={() => setActiveMainTab('question_bank')} className={`flex items-center gap-2 px-3 py-2 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${activeMainTab === 'question_bank' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><Database size={16} /> Bank Soal</button>
-                    <button onClick={() => setActiveMainTab('students')} className={`flex items-center gap-2 px-3 py-2 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${activeMainTab === 'students' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><Users size={16} /> Siswa</button>
-                    <button onClick={() => setActiveMainTab('grades')} className={`flex items-center gap-2 px-3 py-2 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${activeMainTab === 'grades' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><Award size={16} /> Rekap Nilai</button>
+                    <button onClick={() => setActiveMainTab('dashboard')} className={`flex items-center gap-2 px-3 py-2 font-bold text-sm border-b-2 transition-colors whitespace-nowrap ${activeMainTab === 'dashboard' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-indigo-600'}`}>Beranda</button>
                   </div>
                 )}
 
@@ -1040,7 +1118,91 @@
 
                 <main className="flex-1 overflow-y-auto bg-slate-50 p-4 md:p-8 relative print:p-0 print:bg-white print:overflow-visible">
                   
-                  {activeMainTab === 'question_bank' && viewMode === 'teacher' ? (
+                  {activeMainTab === 'dashboard' && viewMode === 'teacher' ? (
+                     <div className="max-w-6xl mx-auto p-2 md:p-6 animate-fade-in w-full print:hidden">
+                        <div className="mb-8 bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-8 md:p-12 text-white shadow-lg relative overflow-hidden">
+                          <div className="absolute inset-0 bg-indigo-900 opacity-20 blur-2xl rounded-full scale-150 -translate-y-10"></div>
+                          <div className="relative z-10">
+                            <h1 className="text-3xl md:text-5xl font-extrabold mb-4 flex items-center gap-4"><BookOpen size={40}/> Dasbor Guru</h1>
+                            <p className="text-slate-300 text-lg max-w-2xl">Selamat datang di pusat kendali LUMINA. Pilih menu di bawah ini untuk mulai mengelola aktivitas pembelajaran.</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                          <div onClick={() => setActiveMainTab('curriculum')} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 cursor-pointer hover:shadow-xl hover:border-indigo-400 transform hover:-translate-y-1.5 transition-all group">
+                            <div className="w-14 h-14 rounded-xl flex items-center justify-center bg-indigo-50 text-indigo-600 mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-colors"><Library size={28} /></div>
+                            <h3 className="text-xl font-bold text-slate-800 mb-2">Kelola Modul</h3>
+                            <p className="text-sm text-slate-500">Buat dan atur kursus, materi teks, dokumen, video, hingga kuis untuk siswa.</p>
+                          </div>
+
+                          <div onClick={() => setActiveMainTab('question_bank')} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 cursor-pointer hover:shadow-xl hover:border-emerald-400 transform hover:-translate-y-1.5 transition-all group">
+                            <div className="w-14 h-14 rounded-xl flex items-center justify-center bg-emerald-50 text-emerald-600 mb-4 group-hover:bg-emerald-600 group-hover:text-white transition-colors"><Database size={28} /></div>
+                            <h3 className="text-xl font-bold text-slate-800 mb-2">Bank Soal</h3>
+                            <p className="text-sm text-slate-500">Pusat master soal. Buat atau impor soal dari Excel untuk digunakan di berbagai kuis.</p>
+                          </div>
+
+                          <div onClick={() => setActiveMainTab('files')} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 cursor-pointer hover:shadow-xl hover:border-blue-400 transform hover:-translate-y-1.5 transition-all group">
+                            <div className="w-14 h-14 rounded-xl flex items-center justify-center bg-blue-50 text-blue-600 mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors"><Folder size={28} /></div>
+                            <h3 className="text-xl font-bold text-slate-800 mb-2">Manajemen File</h3>
+                            <p className="text-sm text-slate-500">Unggah file materi PDF Anda secara aman ke Cloud Storage Database.</p>
+                          </div>
+
+                          <div onClick={() => setActiveMainTab('students')} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 cursor-pointer hover:shadow-xl hover:border-orange-400 transform hover:-translate-y-1.5 transition-all group">
+                            <div className="w-14 h-14 rounded-xl flex items-center justify-center bg-orange-50 text-orange-600 mb-4 group-hover:bg-orange-600 group-hover:text-white transition-colors"><Users size={28} /></div>
+                            <h3 className="text-xl font-bold text-slate-800 mb-2">Manajemen Siswa</h3>
+                            <p className="text-sm text-slate-500">Daftarkan siswa secara manual atau impor massal agar mereka dapat masuk ke LMS.</p>
+                          </div>
+
+                          <div onClick={() => setActiveMainTab('grades')} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 cursor-pointer hover:shadow-xl hover:border-rose-400 transform hover:-translate-y-1.5 transition-all group">
+                            <div className="w-14 h-14 rounded-xl flex items-center justify-center bg-rose-50 text-rose-600 mb-4 group-hover:bg-rose-600 group-hover:text-white transition-colors"><Award size={28} /></div>
+                            <h3 className="text-xl font-bold text-slate-800 mb-2">Rekap Nilai</h3>
+                            <p className="text-sm text-slate-500">Pantau hasil kuis siswa dan unduh laporan nilai dalam format Excel atau PDF.</p>
+                          </div>
+                        </div>
+                     </div>
+
+                  ) : activeMainTab === 'files' && viewMode === 'teacher' ? (
+                     <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:hidden mt-4 animate-fade-in">
+                         <div className="p-6 border-b border-slate-200 bg-slate-50">
+                             <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800"><Folder className="text-blue-600"/> Manajemen File (Cloud Storage)</h2>
+                             <p className="text-sm text-slate-500 mt-1">Unggah file PDF modul Anda langsung ke pangkalan data cloud. Salin tautannya untuk dimasukkan ke materi.</p>
+                         </div>
+                         <div className="p-8">
+                             <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 mb-6 text-center hover:bg-slate-50 transition-colors relative cursor-pointer group">
+                                 <input type="file" accept=".pdf" ref={fileInputRef} onChange={(e) => setUploadFile(e.target.files[0])} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" title="Pilih File PDF" />
+                                 <FileUp size={48} className="mx-auto mb-3 text-indigo-400 group-hover:scale-110 transition-transform" />
+                                 <h3 className="text-lg font-bold text-slate-700 mb-1">{uploadFile ? uploadFile.name : 'Klik atau seret file PDF ke sini'}</h3>
+                                 <p className="text-sm text-slate-500">{uploadFile ? `${(uploadFile.size / 1024 / 1024).toFixed(2)} MB` : 'Maksimal ukuran file disarankan: 20MB (.pdf)'}</p>
+                             </div>
+                             
+                             {uploadStatus === 'uploading' && (
+                                 <div className="mb-6">
+                                     <div className="flex justify-between text-sm font-bold text-slate-600 mb-2"><span>Mengunggah file ke cloud...</span><span>{Math.round(uploadProgress)}%</span></div>
+                                     <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden"><div className="bg-indigo-600 h-3 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div></div>
+                                 </div>
+                             )}
+
+                             {uploadStatus === 'success' && uploadedUrl && (
+                                 <div className="mb-6 p-5 bg-emerald-50 border border-emerald-200 rounded-xl animate-fade-in">
+                                     <p className="text-sm font-bold text-emerald-800 mb-3 flex items-center gap-2"><CheckCircle size={18}/> File Berhasil Diunggah!</p>
+                                     <div className="flex gap-2">
+                                         <input type="text" readOnly value={uploadedUrl} className="flex-1 border border-emerald-300 rounded-lg p-2 text-sm bg-white outline-none font-mono" />
+                                         <button onClick={handleCopyUrl} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-sm flex items-center gap-2 shadow-sm transition-colors"><Copy size={16}/> Salin Link</button>
+                                     </div>
+                                 </div>
+                             )}
+                             
+                             <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
+                                  {uploadStatus === 'success' && <button onClick={() => { setUploadStatus(''); setUploadedUrl(''); setUploadFile(null); if(fileInputRef.current) fileInputRef.current.value = ''; }} className="px-6 py-3 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold transition-colors">Unggah File Lainnya</button>}
+                                  
+                                  <button onClick={handleFileUpload} disabled={!uploadFile || uploadStatus === 'uploading'} className={`px-6 py-3 font-bold rounded-lg shadow-md transition-colors flex items-center gap-2 ${(!uploadFile || uploadStatus === 'uploading') ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}>
+                                    <UploadCloud size={18}/> {uploadStatus === 'uploading' ? 'Memproses...' : 'Unggah ke LUMINA'}
+                                  </button>
+                             </div>
+                         </div>
+                     </div>
+
+                  ) : activeMainTab === 'question_bank' && viewMode === 'teacher' ? (
                      <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden print:hidden">
                        <div className="p-6 border-b border-slate-200 flex flex-col md:flex-row justify-between bg-slate-50 items-start md:items-center gap-4">
                           <div>
@@ -1344,11 +1506,12 @@
                                  {viewMode === 'teacher' && (
                                      <input 
                                          type="text" 
-                                         placeholder="URL File (Contoh: Link Google Drive atau akhiran .pdf)..." 
+                                         placeholder="URL File (Contoh: Link Google Drive, URL Firebase, atau akhiran .pdf)..." 
                                          value={activeItem.attachment || ''} 
                                          onChange={(e) => {
                                              const val = e.target.value;
-                                             const isPdfOrDrive = val.toLowerCase().endsWith('.pdf') || val.includes('drive.google.com') || val.includes('docs.google.com');
+                                             // Cek apakah link merupakan PDF, Drive, atau Firebase Storage
+                                             const isPdfOrDrive = val.toLowerCase().endsWith('.pdf') || val.includes('drive.google.com') || val.includes('docs.google.com') || val.includes('firebasestorage.googleapis.com');
                                              handleDataChange(activeItem.id, { attachment: val, attachmentType: isPdfOrDrive ? 'pdf' : 'image' });
                                          }} 
                                          className="w-full border rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500 mb-4" 
