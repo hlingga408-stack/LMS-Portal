@@ -43,14 +43,15 @@
           BookOpen, CheckCircle, ChevronDown, ChevronRight, ChevronUp, FileText, 
           Folder, PlaySquare, Plus, CheckSquare, Trash2, Users, FileUp, 
           X, Image as ImageIcon, Link as LinkIcon, Lock, Unlock, LogOut, 
-          Check, Library, Award, FileSpreadsheet, Printer, Database, Table,
-          UploadCloud, Copy
+          Check, Library, Award, FileSpreadsheet, Printer, Database, Table, Copy, UploadCloud
         } from 'https://esm.sh/lucide-react@0.292.0';
 
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+        
+        // MENGGUNAKAN UPLOAD DIRECT (Tahan Banting) BUKAN RESUMABLE
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // =========================================================================
         // 🔴🔴🔴 PENTING: ISI DATABASE FIREBASE ANDA DI BAWAH INI 🔴🔴🔴
@@ -63,6 +64,7 @@
   messagingSenderId: "443356880708",
   appId: "1:443356880708:web:f3b37a1aeb9cfc57f70111",
   measurementId: "G-KWXHYGY23F"
+
         };
         // =========================================================================
 
@@ -133,14 +135,13 @@
 
           const [bankImportMode, setBankImportMode] = useState(false);
           const [bankImportText, setBankImportText] = useState('');
-          
+
           // State untuk Firebase Storage PDF Upload
           const [uploadFile, setUploadFile] = useState(null);
-          const [uploadProgress, setUploadProgress] = useState(0);
           const [uploadStatus, setUploadStatus] = useState(''); 
           const [uploadedUrl, setUploadedUrl] = useState('');
           const fileInputRef = useRef(null);
-
+          
           const [confirmModal, setConfirmModal] = useState({ isOpen: false, message: '', onConfirm: null });
           const [promptModal, setPromptModal] = useState({ isOpen: false, title: '', placeholder: '', type: 'text', onConfirm: null });
           const [bankSelector, setBankSelector] = useState({ isOpen: false, targetQuizId: null, selectedIds: [] }); 
@@ -159,7 +160,7 @@
 
           const activeItem = activeItemId ? findNode(data, activeItemId) : null;
 
-          // LOGIKA DETEKTOR YOUTUBE 50% DIPERBAIKI (TOMBOL BISA DIKLIK)
+          // LOGIKA DETEKTOR YOUTUBE 50%
           useEffect(() => {
             if (viewMode !== 'student' || activeItem?.type !== 'video' || !activeItem?.videoUrl) {
               setCanCompleteVideo(true);
@@ -180,7 +181,6 @@
               const videoId = activeItem.videoUrl.split('v=')[1]?.split('&')[0];
               if (!videoId) return;
 
-              // Kosongkan kontainer sebelum membuat IFrame baru agar tidak menumpuk
               ytContainerRef.current.innerHTML = '';
 
               player = new window.YT.Player(ytContainerRef.current, {
@@ -192,7 +192,7 @@
                   'controls': 1, 
                   'rel': 0, 
                   'playsinline': 1,
-                  'modestbranding': 1 // Tampilan lebih bersih
+                  'modestbranding': 1
                 },
                 events: {
                   'onStateChange': (event) => {
@@ -553,7 +553,7 @@
           };
 
           // ==========================================
-          // LOGIKA UPLOAD FIREBASE STORAGE
+          // LOGIKA UPLOAD DIRECT KE FIREBASE STORAGE
           // ==========================================
           const handleFileUpload = async () => {
              if (!uploadFile) return;
@@ -563,38 +563,25 @@
              }
 
              setUploadStatus('uploading');
-             setUploadProgress(0);
 
-             // Penamaan file unik agar tidak tertimpa
+             // Penamaan file unik
              const uniqueFileName = `${Date.now()}_${uploadFile.name.replace(/\s+/g, '_')}`;
              const storageRef = ref(storage, `artifacts/${appId}/public/files/${uniqueFileName}`);
              
-             const uploadTask = uploadBytesResumable(storageRef, uploadFile);
-
-             uploadTask.on('state_changed', 
-                (snapshot) => {
-                   const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                   setUploadProgress(progress);
-                }, 
-                (error) => {
-                   console.error("Storage Error:", error);
-                   setUploadStatus('error');
-                   showConfirm('Gagal mengunggah. Pastikan pengaturan Rules di Firebase Storage Anda mengizinkan read/write (Lihat buku panduan).', () => {});
-                }, 
-                async () => {
-                   try {
-                      const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                      setUploadedUrl(downloadURL);
-                      setUploadStatus('success');
-                      setUploadFile(null);
-                      if (fileInputRef.current) fileInputRef.current.value = '';
-                   } catch (err) {
-                      console.error(err);
-                      setUploadStatus('error');
-                      showConfirm('Gagal mendapatkan tautan file.', () => {});
-                   }
-                }
-             );
+             try {
+                // Upload Langsung Sekali Jalan (Tanpa dicicil/Resumable) agar tidak kena blokir CORS/Firewall
+                const snapshot = await uploadBytes(storageRef, uploadFile);
+                const downloadURL = await getDownloadURL(snapshot.ref);
+                
+                setUploadedUrl(downloadURL);
+                setUploadStatus('success');
+                setUploadFile(null);
+                if (fileInputRef.current) fileInputRef.current.value = '';
+             } catch (error) {
+                console.error("Storage Error:", error);
+                setUploadStatus('error');
+                showConfirm('Gagal mengunggah file. Pastikan Rules Storage Anda benar dan matikan pemblokir iklan (Adblocker) jika ada.', () => {});
+             }
           };
 
           const handleCopyUrl = () => {
@@ -1077,7 +1064,6 @@
                 </div>
               )}
 
-              {/* TAMPILAN HEADER YANG BERSIH SESUAI REQUEST TERAKHIR */}
               <header className="h-16 border-b border-slate-200 px-6 flex items-center justify-between bg-white shrink-0 shadow-sm z-10 print:hidden">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center"><BookOpen size={18} className="text-white" /></div>
@@ -1177,8 +1163,8 @@
                              
                              {uploadStatus === 'uploading' && (
                                  <div className="mb-6">
-                                     <div className="flex justify-between text-sm font-bold text-slate-600 mb-2"><span>Mengunggah file ke cloud...</span><span>{Math.round(uploadProgress)}%</span></div>
-                                     <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden"><div className="bg-indigo-600 h-3 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div></div>
+                                     <div className="flex justify-between text-sm font-bold text-slate-600 mb-2"><span>Mengunggah file ke cloud...</span><span>Mohon tunggu</span></div>
+                                     <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden animate-pulse"><div className="bg-indigo-600 h-3 rounded-full w-full"></div></div>
                                  </div>
                              )}
 
@@ -1349,10 +1335,10 @@
                           {data.filter(c => c.type === 'course' && !c.isLocked).map(course => {
                              const courseQuizzes = getQuizzesFromNodes(course.items || []);
                              
-                             // HANYA MENGAMBIL KUIS YANG SUDAH ADA HASILNYA (NILAI != UNDEFINED)
+                             // HANYA MENGAMBIL KUIS YANG SUDAH ADA HASILNYA
                              const completedQuizzes = courseQuizzes.filter(quiz => quizResults[quiz.id] !== undefined);
                              
-                             if (completedQuizzes.length === 0) return null; // Sembunyikan kursus jika tidak ada kuis yg selesai
+                             if (completedQuizzes.length === 0) return null; 
                              
                              return (
                                <div key={`recap-${course.id}`} className="mb-6 last:mb-0">
@@ -1376,7 +1362,7 @@
                              );
                           })}
                           
-                          {/* JIKA BELUM ADA SATUPUN KUIS YANG DIKERJAKAN DI KURSUS MANAPUN YANG TERBUKA */}
+                          {/* JIKA BELUM ADA SATUPUN KUIS YANG DIKERJAKAN */}
                           {data.filter(c => c.type === 'course' && !c.isLocked).every(c => {
                              const courseQuizzes = getQuizzesFromNodes(c.items || []);
                              const completedQuizzes = courseQuizzes.filter(quiz => quizResults[quiz.id] !== undefined);
