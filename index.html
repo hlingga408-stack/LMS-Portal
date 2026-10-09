@@ -49,16 +49,13 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // MENGGUNAKAN UPLOAD DIRECT (Tahan Banting) BUKAN RESUMABLE
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
         // =========================================================================
         // 🔴🔴🔴 PENTING: ISI DATABASE FIREBASE ANDA DI BAWAH INI 🔴🔴🔴
         // =========================================================================
         const myFirebaseConfig = {
-           
-apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
+            apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
   authDomain: "database-lms-portal.firebaseapp.com",
   projectId: "database-lms-portal",
   storageBucket: "database-lms-portal.firebasestorage.app",
@@ -87,11 +84,7 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
               {
                 id: 'm1', type: 'module', title: 'Modul 1: Pengenalan', isOpen: true,
                 items: [
-                  { id: 'm1-1', type: 'text', title: 'Selamat Datang', content: 'Selamat datang di kursus ini.', attachment: null, attachmentType: null },
-                  { 
-                    id: 'm1-2', type: 'quiz', title: 'Kuis Latihan',
-                    questions: [{ id: 'q1', type: 'multiple_choice', question: 'Apa hasil dari $$2 + 2$$ ?', options: ['$$3$$', '$$4$$', '$$5$$'], correctAnswer: '$$4$$', explanation: 'Tentu saja $$4$$.' }]
-                  }
+                  { id: 'm1-1', type: 'text', title: 'Selamat Datang', content: 'Selamat datang di kursus ini.', attachment: null, attachmentType: null }
                 ]
               }
             ]
@@ -111,7 +104,7 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
           const [loginError, setLoginError] = useState('');
 
           const [viewMode, setViewMode] = useState('teacher'); 
-          const [activeMainTab, setActiveMainTab] = useState('dashboard'); // Diubah default ke dashboard
+          const [activeMainTab, setActiveMainTab] = useState('dashboard'); // Default dashboard
           const [studentSession, setStudentSession] = useState(null);
           
           const [data, setData] = useState(INITIAL_DATA);
@@ -135,7 +128,7 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
           const [bankImportMode, setBankImportMode] = useState(false);
           const [bankImportText, setBankImportText] = useState('');
 
-          // State untuk Firebase Storage PDF Upload
+          // Storage States
           const [uploadFile, setUploadFile] = useState(null);
           const [uploadStatus, setUploadStatus] = useState(''); 
           const [uploadedUrl, setUploadedUrl] = useState('');
@@ -159,7 +152,6 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
 
           const activeItem = activeItemId ? findNode(data, activeItemId) : null;
 
-          // LOGIKA DETEKTOR YOUTUBE 50%
           useEffect(() => {
             if (viewMode !== 'student' || activeItem?.type !== 'video' || !activeItem?.videoUrl) {
               setCanCompleteVideo(true);
@@ -187,11 +179,7 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
                 width: '100%',
                 height: '100%',
                 playerVars: { 
-                  'autoplay': 0, 
-                  'controls': 1, 
-                  'rel': 0, 
-                  'playsinline': 1,
-                  'modestbranding': 1
+                  'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1, 'modestbranding': 1
                 },
                 events: {
                   'onStateChange': (event) => {
@@ -551,24 +539,19 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
             printWindow.document.open(); printWindow.document.write(htmlContent); printWindow.document.close();
           };
 
-          // ==========================================
-          // LOGIKA UPLOAD DIRECT KE FIREBASE STORAGE
-          // ==========================================
+          // File Upload Logic (Firebase Storage)
           const handleFileUpload = async () => {
              if (!uploadFile) return;
              if (!storage) {
-                showConfirm('Firebase Storage belum dikonfigurasi di source code Anda. Mohon pastikan kunci API sudah benar.', ()=>{});
+                showConfirm('Firebase Storage belum terhubung. Pastikan Kunci API diisi dengan benar.', ()=>{});
                 return;
              }
 
              setUploadStatus('uploading');
-
-             // Penamaan file unik
              const uniqueFileName = `${Date.now()}_${uploadFile.name.replace(/\s+/g, '_')}`;
              const storageRef = ref(storage, `artifacts/${appId}/public/files/${uniqueFileName}`);
              
              try {
-                // Upload Langsung Sekali Jalan (Tanpa dicicil/Resumable) agar tidak kena blokir CORS/Firewall
                 const snapshot = await uploadBytes(storageRef, uploadFile);
                 const downloadURL = await getDownloadURL(snapshot.ref);
                 
@@ -579,7 +562,7 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
              } catch (error) {
                 console.error("Storage Error:", error);
                 setUploadStatus('error');
-                showConfirm('Gagal mengunggah file. Pastikan Rules Storage Anda benar dan matikan pemblokir iklan (Adblocker) jika ada.', () => {});
+                showConfirm('Gagal unggah. Pastikan Rules Storage sudah mengizinkan baca/tulis dan Matikan Adblock.', () => {});
              }
           };
 
@@ -591,9 +574,9 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
                 textArea.select();
                 try {
                    document.execCommand('copy');
-                   showConfirm('Tautan berhasil disalin! Sekarang buka menu "Kelola Modul", buat Materi Dokumen, dan Paste tautan ini di sana.', () => {});
+                   showConfirm('Tautan berhasil disalin! Kembali ke Kelola Modul, buat Materi Dokumen, lalu Paste link ini.', () => {});
                 } catch (err) {
-                   showConfirm('Gagal menyalin otomatis. Silakan blok tautannya dan salin (Copy) secara manual.', () => {});
+                   showConfirm('Gagal otomatis. Blok teks link lalu Copy manual.', () => {});
                 }
                 document.body.removeChild(textArea);
              }
@@ -1084,6 +1067,7 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
                 </div>
               </header>
 
+              {}
               <div className="flex flex-1 overflow-hidden print:h-auto print:overflow-visible">
                 
                 {activeMainTab === 'curriculum' && (viewMode === 'teacher' || (viewMode === 'student' && activeStudentCourseId)) && (
@@ -1334,7 +1318,6 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
                           {data.filter(c => c.type === 'course' && !c.isLocked).map(course => {
                              const courseQuizzes = getQuizzesFromNodes(course.items || []);
                              
-                             // HANYA MENGAMBIL KUIS YANG SUDAH ADA HASILNYA
                              const completedQuizzes = courseQuizzes.filter(quiz => quizResults[quiz.id] !== undefined);
                              
                              if (completedQuizzes.length === 0) return null; 
@@ -1361,7 +1344,6 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
                              );
                           })}
                           
-                          {/* JIKA BELUM ADA SATUPUN KUIS YANG DIKERJAKAN */}
                           {data.filter(c => c.type === 'course' && !c.isLocked).every(c => {
                              const courseQuizzes = getQuizzesFromNodes(c.items || []);
                              const completedQuizzes = courseQuizzes.filter(quiz => quizResults[quiz.id] !== undefined);
@@ -1424,6 +1406,7 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
                           </div>
                         )}
 
+                        {}
                         {['text', 'document', 'folder', 'module', 'course'].includes(activeItem.type) && (
                           <div className="space-y-4 mt-6">
                             <div className="flex justify-between items-end mb-2">
@@ -1485,17 +1468,17 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
                               </div>
                             )}
                             
+                            {}
                             {['text', 'document'].includes(activeItem.type) && (
                               <div className="mt-8 pt-6 border-t border-slate-200">
                                  <h3 className="font-bold text-sm text-slate-700 mb-3">Lampiran File (PDF/Gambar/Google Drive)</h3>
                                  {viewMode === 'teacher' && (
                                      <input 
                                          type="text" 
-                                         placeholder="URL File (Contoh: Link Google Drive, URL Firebase, atau akhiran .pdf)..." 
+                                         placeholder="URL File (Contoh: Link Google Drive, Tautan Upload Cloud, atau akhiran .pdf)..." 
                                          value={activeItem.attachment || ''} 
                                          onChange={(e) => {
                                              const val = e.target.value;
-                                             // Cek apakah link merupakan PDF, Drive, atau Firebase Storage
                                              const isPdfOrDrive = val.toLowerCase().endsWith('.pdf') || val.includes('drive.google.com') || val.includes('docs.google.com') || val.includes('firebasestorage.googleapis.com');
                                              handleDataChange(activeItem.id, { attachment: val, attachmentType: isPdfOrDrive ? 'pdf' : 'image' });
                                          }} 
@@ -1513,6 +1496,9 @@ apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
                                          if (embedUrl.includes('drive.google.com/file/d/')) {
                                              const match = embedUrl.match(/[-\w]{25,}/);
                                              if (match) embedUrl = `https://drive.google.com/file/d/${match[0]}/preview`;
+                                         } else if (!embedUrl.includes('#toolbar=0')) {
+                                             // Sembunyikan tombol download untuk file PDF dari Cloud Storage / Server Luar
+                                             embedUrl = embedUrl + "#toolbar=0";
                                          }
                                          
                                          return (
