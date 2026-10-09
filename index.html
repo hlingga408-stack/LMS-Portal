@@ -985,7 +985,7 @@
                     
                     <form onSubmit={handleLogin} className="space-y-4">
                       <div>
-                        <input type="text" placeholder="Username (NIS untuk siswa)" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" required />
+                        <input type="text" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" required />
                       </div>
                       <div>
                         <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 transition-colors shadow-sm" required />
@@ -1334,9 +1334,10 @@
                           {data.filter(c => c.type === 'course' && !c.isLocked).map(course => {
                              const courseQuizzes = getQuizzesFromNodes(course.items || []);
                              
+                             // HANYA MENGAMBIL KUIS YANG SUDAH ADA HASILNYA (NILAI != UNDEFINED)
                              const completedQuizzes = courseQuizzes.filter(quiz => quizResults[quiz.id] !== undefined);
                              
-                             if (completedQuizzes.length === 0) return null; 
+                             if (completedQuizzes.length === 0) return null; // Sembunyikan kursus jika tidak ada kuis yg selesai
                              
                              return (
                                <div key={`recap-${course.id}`} className="mb-6 last:mb-0">
@@ -1360,6 +1361,7 @@
                              );
                           })}
                           
+                          {/* JIKA BELUM ADA SATUPUN KUIS YANG DIKERJAKAN DI KURSUS MANAPUN YANG TERBUKA */}
                           {data.filter(c => c.type === 'course' && !c.isLocked).every(c => {
                              const courseQuizzes = getQuizzesFromNodes(c.items || []);
                              const completedQuizzes = courseQuizzes.filter(quiz => quizResults[quiz.id] !== undefined);
