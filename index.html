@@ -55,7 +55,7 @@
         // 🔴🔴🔴 PENTING: ISI DATABASE FIREBASE ANDA DI BAWAH INI 🔴🔴🔴
         // =========================================================================
         const myFirebaseConfig = {
-            apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
+           apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
   authDomain: "database-lms-portal.firebaseapp.com",
   projectId: "database-lms-portal",
   storageBucket: "database-lms-portal.firebasestorage.app",
@@ -104,7 +104,7 @@
           const [loginError, setLoginError] = useState('');
 
           const [viewMode, setViewMode] = useState('teacher'); 
-          const [activeMainTab, setActiveMainTab] = useState('dashboard'); // Default Dashboard
+          const [activeMainTab, setActiveMainTab] = useState('dashboard');
           const [studentSession, setStudentSession] = useState(null);
           
           const [data, setData] = useState(INITIAL_DATA);
@@ -128,7 +128,6 @@
           const [bankImportMode, setBankImportMode] = useState(false);
           const [bankImportText, setBankImportText] = useState('');
 
-          // Storage States
           const [uploadFile, setUploadFile] = useState(null);
           const [uploadStatus, setUploadStatus] = useState(''); 
           const [uploadedUrl, setUploadedUrl] = useState('');
@@ -141,7 +140,6 @@
           const ytContainerRef = useRef(null);
           const [canCompleteVideo, setCanCompleteVideo] = useState(true);
 
-          // Inisialisasi YouTube API
           useEffect(() => {
             if (!window.YT) {
               const tag = document.createElement('script');
@@ -153,7 +151,6 @@
 
           const activeItem = activeItemId ? findNode(data, activeItemId) : null;
 
-          // YouTube Player Detektor 50%
           useEffect(() => {
             if (viewMode !== 'student' || activeItem?.type !== 'video' || !activeItem?.videoUrl) {
               setCanCompleteVideo(true);
@@ -180,9 +177,7 @@
                 videoId: videoId,
                 width: '100%',
                 height: '100%',
-                playerVars: { 
-                  'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1, 'modestbranding': 1
-                },
+                playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0, 'playsinline': 1, 'modestbranding': 1 },
                 events: {
                   'onStateChange': (event) => {
                     if (event.data === window.YT.PlayerState.PLAYING) {
@@ -216,13 +211,11 @@
 
           const generateId = () => Math.random().toString(36).substr(2, 9);
 
-          // Waktu Realtime untuk Sumatif Cooldown
           useEffect(() => {
              const timer = setInterval(() => setCurrentTime(Date.now()), 60000); 
              return () => clearInterval(timer);
           }, []);
 
-          // Autentikasi Cloud
           useEffect(() => {
             if (!auth) return;
             const initAuth = async () => {
@@ -238,7 +231,6 @@
             return onAuthStateChanged(auth, (user) => setFirebaseUser(user));
           }, []);
 
-          // Sinkronisasi Firebase Realtime
           useEffect(() => {
             if (!firebaseUser || !db) return;
             
@@ -246,8 +238,6 @@
               if (docSnap.exists()) {
                   setData(docSnap.data().tree || []);
               } else {
-                  // BUG FIX: Jangan simpan/timpa otomatis ke DB jika kosong, cukup set state lokal.
-                  // Ini mencegah data hilang karena lupa memasukkan Firebase Config.
                   setData(INITIAL_DATA);
               }
             });
@@ -283,7 +273,6 @@
             return () => { unsubData(); unsubStudents(); unsubSubmissions(); unsubBank(); unsubProgress(); };
           }, [firebaseUser, viewMode, studentSession]);
 
-          // Fungsi Tulis Firebase
           const handleSetData = (newData) => {
             setData(newData);
             if (firebaseUser && db) setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'curriculum'), { tree: newData });
@@ -317,7 +306,6 @@
             }
           };
 
-          // Sistem Login
           const handleLogin = (e) => {
             e.preventDefault();
             if (username === 'guru' && password === '19882026') {
@@ -343,7 +331,6 @@
           const showConfirm = (message, onConfirm) => setConfirmModal({ isOpen: true, message, onConfirm });
           const showPrompt = (title, placeholder, type, onConfirm) => setPromptModal({ isOpen: true, title, placeholder, type, onConfirm });
 
-          // Struktur Pohon Data
           function findNode(nodes, id) {
             for (const node of nodes) {
               if (node.id === id) return node;
@@ -370,25 +357,47 @@
             return null;
           };
 
-          const isItemLocked = (itemId) => {
+          // Sistem Penguncian Hierarki (Deep Locking) yang Baru
+          const isNodeLocked = (nodeId) => {
             if (viewMode === 'teacher') return false;
-            const courseContext = getCourseForNode(itemId);
+            
+            // Cari konteks kursus di mana node ini berada
+            const courseContext = getCourseForNode(nodeId);
             if (!courseContext) return false;
-            const courseActionables = getFlatActionableItems([courseContext]);
-            const index = courseActionables.findIndex(item => item.id === itemId);
-            if (index <= 0) return false;
-            const previousItem = courseActionables[index - 1];
-            return !completedItems.includes(previousItem.id);
-          };
 
-          const isNodeLocked = (node) => {
-            if (viewMode === 'teacher') return false;
-            if (['text', 'video', 'document', 'quiz', 'quiz_sumatif'].includes(node.type)) return isItemLocked(node.id);
-            if (node.items && node.items.length > 0) {
-              const nodeActionables = getFlatActionableItems(node.items);
-              if (nodeActionables.length > 0) return isItemLocked(nodeActionables[0].id);
-            }
-            return false;
+            let lastActionable = null;
+            let found = false;
+            let precedingActionable = null;
+
+            // Telusuri pohon dari akar kursus untuk mencari item aksi terakhir sebelum node ini
+            const traverse = (n) => {
+                if (found) return;
+                
+                if (n.id === nodeId) {
+                    found = true;
+                    precedingActionable = lastActionable;
+                    return;
+                }
+                
+                // Ingat item yang bisa diselesaikan jika menemukannya
+                if (['text', 'video', 'document', 'quiz', 'quiz_sumatif'].includes(n.type)) {
+                    lastActionable = n;
+                }
+                
+                if (n.items) {
+                    for (const child of n.items) {
+                        traverse(child);
+                    }
+                }
+            };
+
+            traverse(courseContext);
+
+            // Jika tidak ada item aksi sebelum node ini (misalnya ini modul pertama), maka tidak terkunci
+            if (!precedingActionable) return false;
+            
+            // Terkunci JIKA item aksi terakhir sebelum node ini BELUM diselesaikan
+            return !completedItems.includes(precedingActionable.id);
           };
 
           const handleDataChange = (id, changes) => {
@@ -555,30 +564,23 @@
             printWindow.document.open(); printWindow.document.write(htmlContent); printWindow.document.close();
           };
 
-          // File Upload Logic (Firebase Storage)
           const handleFileUpload = async () => {
              if (!uploadFile) return;
              if (!storage) {
                 showConfirm('Firebase Storage belum terhubung. Pastikan Kunci API diisi dengan benar.', ()=>{});
                 return;
              }
-
              setUploadStatus('uploading');
              const uniqueFileName = `${Date.now()}_${uploadFile.name.replace(/\s+/g, '_')}`;
              const storageRef = ref(storage, `artifacts/${appId}/public/files/${uniqueFileName}`);
-             
              try {
                 const snapshot = await uploadBytes(storageRef, uploadFile);
                 const downloadURL = await getDownloadURL(snapshot.ref);
-                
-                setUploadedUrl(downloadURL);
-                setUploadStatus('success');
-                setUploadFile(null);
+                setUploadedUrl(downloadURL); setUploadStatus('success'); setUploadFile(null);
                 if (fileInputRef.current) fileInputRef.current.value = '';
              } catch (error) {
-                console.error("Storage Error:", error);
                 setUploadStatus('error');
-                showConfirm('Gagal unggah. Pastikan Rules Storage sudah mengizinkan baca/tulis dan Matikan Adblock.', () => {});
+                showConfirm('Gagal unggah. Pastikan Aturan CORS dan Rules Firebase sudah dibuka.', () => {});
              }
           };
 
@@ -588,12 +590,8 @@
                 textArea.value = uploadedUrl;
                 document.body.appendChild(textArea);
                 textArea.select();
-                try {
-                   document.execCommand('copy');
-                   showConfirm('Tautan berhasil disalin! Kembali ke Kelola Modul, buat Materi Dokumen, lalu Paste link ini.', () => {});
-                } catch (err) {
-                   showConfirm('Gagal otomatis. Blok teks link lalu Copy manual.', () => {});
-                }
+                try { document.execCommand('copy'); showConfirm('Tautan berhasil disalin! Silakan buat Materi Dokumen, lalu Paste link ini.', () => {}); } 
+                catch (err) { showConfirm('Gagal otomatis. Blok teks link lalu Copy manual.', () => {}); }
                 document.body.removeChild(textArea);
              }
           };
@@ -614,7 +612,7 @@
             return nodes.map((node) => {
               const isFolder = node.type === 'module' || node.type === 'folder' || node.type === 'course';
               const isActive = node.id === activeItemId;
-              const isLocked = isNodeLocked(node);
+              const isLocked = isNodeLocked(node.id); // Evaluasi lock hierarki secara mendalam
               const isCompleted = completedItems.includes(node.id);
               const isActionableNode = ['text', 'video', 'document', 'quiz', 'quiz_sumatif'].includes(node.type);
               
@@ -674,6 +672,7 @@
                     </div>
                   </div>
                   
+                  {/* Jika Modul/Folder TERKUNCI, isinya tidak akan dirender (Tidak bisa diintip) */}
                   {node.items && node.isOpen && !isLocked && (
                     <div className="border-l border-slate-200 ml-5 relative">
                       {renderTree(node.items, level + 1)}
@@ -699,7 +698,6 @@
           };
 
           const renderSingleQuestionEditor = (q, index, updateFn, deleteFn, isBankItem = false, itemProps = {}) => {
-             // Anti Cheat Properties (Blok klik kanan dan salin/tempel)
              const applyAntiCheatProps = () => {
                 if (viewMode === 'teacher') return {}; 
                 return {
@@ -1284,7 +1282,7 @@
                       {studentFormMode === 'manual' && (
                         <form onSubmit={handleAddManualStudent} className="p-4 bg-indigo-50 border-b flex gap-3 items-end">
                           <div className="flex-1"><label className="block text-xs font-bold mb-1">Nama</label><input type="text" value={manualForm.name} onChange={(e) => setManualForm({...manualForm, name: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
-                          <div className="flex-1"><label className="block text-xs font-bold mb-1">NIS (Utk Username & Password)</label><input type="text" value={manualForm.nis} onChange={(e) => setManualForm({...manualForm, nis: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
+                          <div className="flex-1"><label className="block text-xs font-bold mb-1">NIS</label><input type="text" value={manualForm.nis} onChange={(e) => setManualForm({...manualForm, nis: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
                           <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded text-sm h-[38px]">Simpan</button>
                           <button type="button" onClick={() => setStudentFormMode(null)} className="px-3 py-2 text-indigo-600 font-bold rounded text-sm h-[38px]">Batal</button>
                         </form>
@@ -1293,7 +1291,7 @@
                         <div className="p-4 bg-emerald-50 border-b"><textarea value={massForm} onChange={(e) => setMassForm(e.target.value)} className="w-full h-32 border rounded-lg p-3 text-sm font-mono mb-2" placeholder="Nama, NIS&#10;Budi, 1001"/><div className="flex justify-end gap-2"><button onClick={() => setStudentFormMode(null)} className="px-4 py-2 text-emerald-700 font-bold rounded text-sm">Batal</button><button onClick={handleMassImportSubmit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded text-sm">Proses Impor</button></div></div>
                       )}
                       <table className="w-full text-left border-collapse">
-                        <thead><tr className="bg-slate-100 border-b"><th className="p-4">Nama Siswa</th><th className="p-4">NIS (Username/Pass)</th><th className="p-4 print:hidden">Aksi</th></tr></thead>
+                        <thead><tr className="bg-slate-100 border-b"><th className="p-4">Nama Siswa</th><th className="p-4">NIS</th><th className="p-4 print:hidden">Aksi</th></tr></thead>
                         <tbody>
                           {students.map((st) => (
                             <tr key={st.id} className="border-b hover:bg-slate-50"><td className="p-4 font-medium text-slate-800">{st.name}</td><td className="p-4 text-slate-500">{st.nis}</td><td className="p-4 print:hidden"><button onClick={() => showConfirm("Hapus siswa?", () => handleSetStudents(students.filter(s => s.id !== st.id)))} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>
@@ -1380,7 +1378,7 @@
                   ) : !activeItem ? (
                      <div className="h-full flex flex-col items-center justify-center text-slate-400"><Library size={64} className="mb-4 opacity-20" /><p className="text-lg font-medium text-slate-500 mb-6">Pilih konten dari menu di sebelah kiri</p></div>
 
-                  ) : (activeItem && isItemLocked(activeItem.id) && viewMode === 'student') ? (
+                  ) : (activeItem && isNodeLocked(activeItem.id) && viewMode === 'student') ? (
                      <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-white rounded-3xl border border-slate-200 shadow-sm p-8 text-center max-w-md mx-auto my-auto"><Lock size={64} className="mb-4 text-slate-300" /><h2 className="text-xl font-bold text-slate-700 mb-2">Materi Terkunci</h2><p className="text-sm text-slate-500">Selesaikan materi sebelumnya terlebih dahulu.</p></div>
 
                   ) : (
@@ -1485,7 +1483,7 @@
                               </div>
                             )}
                             
-                            {/* PDF EMBEDDING DENGAN ANTI-DOWNLOAD & SHIELD */}
+                            {/* PDF EMBEDDING DENGAN ANTI-DOWNLOAD SHIELD (Mode Kios) */}
                             {['text', 'document'].includes(activeItem.type) && (
                               <div className="mt-8 pt-6 border-t border-slate-200">
                                  <h3 className="font-bold text-sm text-slate-700 mb-3">Lampiran File (PDF/Gambar/Google Drive)</h3>
