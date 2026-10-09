@@ -55,7 +55,7 @@
         // 🔴🔴🔴 PENTING: ISI DATABASE FIREBASE ANDA DI BAWAH INI 🔴🔴🔴
         // =========================================================================
         const myFirebaseConfig = {
-            apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
+           apiKey: "AIzaSyAt8fb_9_p5MxCv4j59ilxVhWbevC9kbjE",
   authDomain: "database-lms-portal.firebaseapp.com",
   projectId: "database-lms-portal",
   storageBucket: "database-lms-portal.firebasestorage.app",
@@ -359,45 +359,40 @@
             return null;
           };
 
-          // Sistem Penguncian Linier Ketat (Strict Linear Deep Locking)
+          // Algoritma Penguncian Hierarki Penuh (Flatten Scan)
           const isNodeLocked = (nodeId) => {
             if (viewMode === 'teacher') return false;
             
-            // Cari konteks kursus di mana node ini berada
             const courseContext = getCourseForNode(nodeId);
             if (!courseContext) return false;
 
-            let locked = false;
-            let foundNode = false;
+            // Kumpulkan SEMUA item aksi dalam urutan dari atas ke bawah
+            const allActionables = getFlatActionableItems([courseContext]);
+            
+            // Cek apakah ada materi sebelum node ini yang belum selesai
+            let isLocked = false;
+            
+            // Jika yang dicek adalah folder/module, kita harus periksa semua materi SEBELUM materi PERTAMA di dalam folder ini
+            const targetNode = findNode([courseContext], nodeId);
+            if (!targetNode) return false;
 
-            // Telusuri pohon dari akar kursus
-            const traverse = (n) => {
-                if (foundNode || locked) return;
-                
-                if (n.id === nodeId) {
-                    foundNode = true;
-                    return;
-                }
-                
-                // Jika ini adalah item yang HARUS diselesaikan (Actionable)
-                if (['text', 'video', 'document', 'quiz', 'quiz_sumatif'].includes(n.type)) {
-                    // Cek apakah item ini belum selesai. Jika belum selesai, 
-                    // maka SEMUA node setelahnya (termasuk folder dan isinya) dikunci.
-                    if (!completedItems.includes(n.id)) {
-                        locked = true;
-                    }
-                }
-                
-                // Telusuri anak-anaknya secara rekursif
-                if (n.items) {
-                    for (const child of n.items) {
-                        traverse(child);
-                    }
-                }
-            };
+            const targetActionables = getFlatActionableItems([targetNode]);
+            if (targetActionables.length === 0) return false; // Folder kosong tidak perlu dilock
 
-            traverse(courseContext);
-            return locked;
+            const firstActionableIdInTarget = targetActionables[0].id;
+            const targetIndex = allActionables.findIndex(item => item.id === firstActionableIdInTarget);
+
+            if (targetIndex > 0) {
+              // Periksa semua item dari index 0 sampai sebelum targetIndex
+              for (let i = 0; i < targetIndex; i++) {
+                if (!completedItems.includes(allActionables[i].id)) {
+                  isLocked = true;
+                  break;
+                }
+              }
+            }
+
+            return isLocked;
           };
 
           const handleDataChange = (id, changes) => {
@@ -451,7 +446,7 @@
             const newItem = {
               id: generateId(), type: type, title: type === 'folder' ? 'Folder Baru' : type === 'module' ? 'Modul Baru' : (type === 'quiz_sumatif' ? 'Kuis Sumatif Baru' : `Materi ${type} Baru`), content: '',
               ...(type === 'folder' || type === 'module' ? { isOpen: true, items: [] } : {}),
-              ...(type === 'quiz' || type === 'quiz_sumatif' ? { questions: [] } : {})
+              ...(type === 'quiz' || type === 'quiz_sumatif' ? { questions: [], showAnswerKey: true } : {})
             };
             const updateNode = (nodes) => nodes.map(node => {
               if (node.id === parentId) return { ...node, isOpen: true, items: [...(node.items || []), newItem] };
@@ -651,7 +646,7 @@
                         onClick={(e) => { e.stopPropagation(); if (!(isLocked && viewMode === 'student')) toggleNode(node.id); }}
                         className={`p-1 hover:bg-slate-200 rounded shrink-0 mr-1 ${isLocked && viewMode === 'student' ? 'pointer-events-none opacity-50' : ''}`}
                       >
-                        {node.isOpen ? <ChevronDown size={14} className="text-slate-500"/> : <ChevronRight size={14} className="text-slate-500"/>}
+                        {node.isOpen && !(isLocked && viewMode === 'student') ? <ChevronDown size={14} className="text-slate-500"/> : <ChevronRight size={14} className="text-slate-500"/>}
                       </button>
                     ) : <span className="w-6 shrink-0"></span>}
                     
@@ -706,7 +701,7 @@
                 };
              };
              
-             const { isSumatif, item_id, studentAnswers_local, quizResults_local, handleUpdateProgress_local } = itemProps;
+             const { isSumatif, item_id, studentAnswers_local, quizResults_local, handleUpdateProgress_local, showAnswerKey } = itemProps;
 
              return (
               <div key={q.id} className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm relative mb-4" {...applyAntiCheatProps()}>
@@ -845,7 +840,7 @@
                     <label className="block text-xs font-bold text-slate-500 mb-1">Pembahasan (Mendukung rumus $$...$$):</label>
                     <textarea value={q.explanation || ''} onChange={(e) => updateFn(q.id, {explanation: e.target.value})} className="w-full border border-amber-200 bg-amber-50/30 rounded-lg p-2 text-sm outline-none min-h-[60px]" placeholder="Tulis penjelasan..." />
                   </div>
-                ) : !isBankItem && quizResults_local[item_id] !== undefined && !isSumatif && (
+                ) : !isBankItem && quizResults_local[item_id] !== undefined && !isSumatif && showAnswerKey !== false && (
                   <div className="mt-3">
                     {q.type !== 'essay' && (
                        <div className={`p-2 text-sm rounded border flex flex-wrap items-center gap-1 ${ (q.type === 'multiple_choice' || q.type === 'true_false' ? (studentAnswers_local[`${item_id}-${q.id}`] === q.correctAnswer) : true) ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
@@ -901,12 +896,20 @@
 
             return (
               <div className="space-y-6 mt-6">
-                <h3 className="font-bold text-lg text-slate-800 border-b pb-2">Daftar Soal Kuis</h3>
+                <div className="flex flex-col md:flex-row md:items-center justify-between border-b pb-2 gap-2">
+                  <h3 className="font-bold text-lg text-slate-800">Daftar Soal {isSumatif ? 'Sumatif' : 'Kuis Latihan'}</h3>
+                  {viewMode === 'teacher' && !isSumatif && (
+                    <label className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 border border-indigo-100 rounded-lg cursor-pointer hover:bg-indigo-100 transition-colors shadow-sm">
+                      <input type="checkbox" checked={item.showAnswerKey !== false} onChange={(e) => handleDataChange(item.id, { showAnswerKey: e.target.checked })} className="w-4 h-4 text-indigo-600 rounded cursor-pointer"/>
+                      <span className="text-xs font-bold text-indigo-900">Tampilkan Kunci & Pembahasan ke Siswa</span>
+                    </label>
+                  )}
+                </div>
                 
                 {questions.length === 0 ? <p className="text-slate-500 italic text-sm">Belum ada soal ditambahkan.</p> : (
                   <div>
                     {questions.map((q, index) => renderSingleQuestionEditor(q, index, updateQuestion, deleteQuestion, false, {
-                       isSumatif, item_id: item.id, studentAnswers_local: studentAnswers, quizResults_local: quizResults, handleUpdateProgress_local: handleUpdateProgress
+                       isSumatif, item_id: item.id, studentAnswers_local: studentAnswers, quizResults_local: quizResults, handleUpdateProgress_local: handleUpdateProgress, showAnswerKey: item.showAnswerKey !== false
                     }))}
                   </div>
                 )}
@@ -1282,7 +1285,7 @@
                       {studentFormMode === 'manual' && (
                         <form onSubmit={handleAddManualStudent} className="p-4 bg-indigo-50 border-b flex gap-3 items-end">
                           <div className="flex-1"><label className="block text-xs font-bold mb-1">Nama</label><input type="text" value={manualForm.name} onChange={(e) => setManualForm({...manualForm, name: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
-                          <div className="flex-1"><label className="block text-xs font-bold mb-1">NIS (Utk Username & Password)</label><input type="text" value={manualForm.nis} onChange={(e) => setManualForm({...manualForm, nis: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
+                          <div className="flex-1"><label className="block text-xs font-bold mb-1">NIS</label><input type="text" value={manualForm.nis} onChange={(e) => setManualForm({...manualForm, nis: e.target.value})} className="w-full border rounded p-2 text-sm" required /></div>
                           <button type="submit" className="px-4 py-2 bg-indigo-600 text-white font-bold rounded text-sm h-[38px]">Simpan</button>
                           <button type="button" onClick={() => setStudentFormMode(null)} className="px-3 py-2 text-indigo-600 font-bold rounded text-sm h-[38px]">Batal</button>
                         </form>
@@ -1291,7 +1294,7 @@
                         <div className="p-4 bg-emerald-50 border-b"><textarea value={massForm} onChange={(e) => setMassForm(e.target.value)} className="w-full h-32 border rounded-lg p-3 text-sm font-mono mb-2" placeholder="Nama, NIS&#10;Budi, 1001"/><div className="flex justify-end gap-2"><button onClick={() => setStudentFormMode(null)} className="px-4 py-2 text-emerald-700 font-bold rounded text-sm">Batal</button><button onClick={handleMassImportSubmit} className="px-4 py-2 bg-emerald-600 text-white font-bold rounded text-sm">Proses Impor</button></div></div>
                       )}
                       <table className="w-full text-left border-collapse">
-                        <thead><tr className="bg-slate-100 border-b"><th className="p-4">Nama Siswa</th><th className="p-4">NIS (Username/Pass)</th><th className="p-4 print:hidden">Aksi</th></tr></thead>
+                        <thead><tr className="bg-slate-100 border-b"><th className="p-4">Nama Siswa</th><th className="p-4">NIS</th><th className="p-4 print:hidden">Aksi</th></tr></thead>
                         <tbody>
                           {students.map((st) => (
                             <tr key={st.id} className="border-b hover:bg-slate-50"><td className="p-4 font-medium text-slate-800">{st.name}</td><td className="p-4 text-slate-500">{st.nis}</td><td className="p-4 print:hidden"><button onClick={() => showConfirm("Hapus siswa?", () => handleSetStudents(students.filter(s => s.id !== st.id)))} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button></td></tr>
