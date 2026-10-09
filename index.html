@@ -104,7 +104,7 @@
           const [loginError, setLoginError] = useState('');
 
           const [viewMode, setViewMode] = useState('teacher'); 
-          const [activeMainTab, setActiveMainTab] = useState('dashboard'); // Default dashboard
+          const [activeMainTab, setActiveMainTab] = useState('dashboard'); // Default Dashboard
           const [studentSession, setStudentSession] = useState(null);
           
           const [data, setData] = useState(INITIAL_DATA);
@@ -141,6 +141,7 @@
           const ytContainerRef = useRef(null);
           const [canCompleteVideo, setCanCompleteVideo] = useState(true);
 
+          // Inisialisasi YouTube API
           useEffect(() => {
             if (!window.YT) {
               const tag = document.createElement('script');
@@ -152,6 +153,7 @@
 
           const activeItem = activeItemId ? findNode(data, activeItemId) : null;
 
+          // YouTube Player Detektor 50%
           useEffect(() => {
             if (viewMode !== 'student' || activeItem?.type !== 'video' || !activeItem?.videoUrl) {
               setCanCompleteVideo(true);
@@ -214,11 +216,13 @@
 
           const generateId = () => Math.random().toString(36).substr(2, 9);
 
+          // Waktu Realtime untuk Sumatif Cooldown
           useEffect(() => {
              const timer = setInterval(() => setCurrentTime(Date.now()), 60000); 
              return () => clearInterval(timer);
           }, []);
 
+          // Autentikasi Cloud
           useEffect(() => {
             if (!auth) return;
             const initAuth = async () => {
@@ -234,17 +238,26 @@
             return onAuthStateChanged(auth, (user) => setFirebaseUser(user));
           }, []);
 
+          // Sinkronisasi Firebase Realtime
           useEffect(() => {
             if (!firebaseUser || !db) return;
             
             const unsubData = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'curriculum'), (docSnap) => {
-              if (docSnap.exists()) setData(docSnap.data().tree || []);
-              else handleSetData(INITIAL_DATA);
+              if (docSnap.exists()) {
+                  setData(docSnap.data().tree || []);
+              } else {
+                  // BUG FIX: Jangan simpan/timpa otomatis ke DB jika kosong, cukup set state lokal.
+                  // Ini mencegah data hilang karena lupa memasukkan Firebase Config.
+                  setData(INITIAL_DATA);
+              }
             });
 
             const unsubStudents = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'students'), (docSnap) => {
-              if (docSnap.exists()) setStudents(docSnap.data().list || []);
-              else handleSetStudents(INITIAL_STUDENTS);
+              if (docSnap.exists()) {
+                  setStudents(docSnap.data().list || []);
+              } else {
+                  setStudents(INITIAL_STUDENTS);
+              }
             });
 
             const unsubSubmissions = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'submissions'), (docSnap) => {
@@ -270,6 +283,7 @@
             return () => { unsubData(); unsubStudents(); unsubSubmissions(); unsubBank(); unsubProgress(); };
           }, [firebaseUser, viewMode, studentSession]);
 
+          // Fungsi Tulis Firebase
           const handleSetData = (newData) => {
             setData(newData);
             if (firebaseUser && db) setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lumina_core', 'curriculum'), { tree: newData });
@@ -303,6 +317,7 @@
             }
           };
 
+          // Sistem Login
           const handleLogin = (e) => {
             e.preventDefault();
             if (username === 'guru' && password === '19882026') {
@@ -328,6 +343,7 @@
           const showConfirm = (message, onConfirm) => setConfirmModal({ isOpen: true, message, onConfirm });
           const showPrompt = (title, placeholder, type, onConfirm) => setPromptModal({ isOpen: true, title, placeholder, type, onConfirm });
 
+          // Struktur Pohon Data
           function findNode(nodes, id) {
             for (const node of nodes) {
               if (node.id === id) return node;
@@ -683,6 +699,7 @@
           };
 
           const renderSingleQuestionEditor = (q, index, updateFn, deleteFn, isBankItem = false, itemProps = {}) => {
+             // Anti Cheat Properties (Blok klik kanan dan salin/tempel)
              const applyAntiCheatProps = () => {
                 if (viewMode === 'teacher') return {}; 
                 return {
@@ -985,12 +1002,12 @@
             <div className="flex flex-col h-screen bg-white font-sans text-slate-800">
               
               {confirmModal.isOpen && (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm z-[9999]">
                   <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full"><h3 className="font-bold text-lg mb-2 text-slate-800">Konfirmasi</h3><p className="text-slate-600 mb-6">{confirmModal.message}</p><div className="flex justify-end gap-3"><button onClick={() => setConfirmModal({isOpen: false})} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-medium">Tutup</button><button onClick={() => { confirmModal.onConfirm(); setConfirmModal({isOpen: false}); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 shadow-sm">Lanjutkan</button></div></div>
                 </div>
               )}
               {promptModal.isOpen && (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm z-[9999]">
                   <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full"><h3 className="font-bold text-lg mb-4 text-slate-800">{promptModal.title}</h3>
                     {promptModal.type === 'textarea' ? <textarea id="promptInput" className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 min-h-[100px] mb-4 font-mono text-sm" placeholder={promptModal.placeholder}></textarea> : <input id="promptInput" type="text" className="w-full border-2 border-slate-200 rounded-xl p-3 outline-none focus:border-indigo-500 mb-4" placeholder={promptModal.placeholder}/>}
                     <div className="flex justify-end gap-3"><button onClick={() => setPromptModal({isOpen: false})} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg font-medium">Batal</button><button onClick={() => { promptModal.onConfirm(document.getElementById('promptInput').value); setPromptModal({isOpen: false}); }} className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 shadow-sm">Simpan</button></div></div>
@@ -998,7 +1015,7 @@
               )}
               
               {bankSelector.isOpen && (
-                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm z-[9999]">
                   <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-3xl w-full max-h-[85vh] flex flex-col">
                     <div className="flex justify-between items-center mb-4">
                       <h3 className="font-bold text-xl text-slate-800 flex items-center gap-2"><Database className="text-indigo-600" /> Ambil dari Bank Soal</h3>
@@ -1067,7 +1084,6 @@
                 </div>
               </header>
 
-              {}
               <div className="flex flex-1 overflow-hidden print:h-auto print:overflow-visible">
                 
                 {activeMainTab === 'curriculum' && (viewMode === 'teacher' || (viewMode === 'student' && activeStudentCourseId)) && (
@@ -1406,7 +1422,6 @@
                           </div>
                         )}
 
-                        {}
                         {['text', 'document', 'folder', 'module', 'course'].includes(activeItem.type) && (
                           <div className="space-y-4 mt-6">
                             <div className="flex justify-between items-end mb-2">
@@ -1468,7 +1483,7 @@
                               </div>
                             )}
                             
-                            {}
+                            {/* PDF EMBEDDING DENGAN ANTI-DOWNLOAD & SHIELD */}
                             {['text', 'document'].includes(activeItem.type) && (
                               <div className="mt-8 pt-6 border-t border-slate-200">
                                  <h3 className="font-bold text-sm text-slate-700 mb-3">Lampiran File (PDF/Gambar/Google Drive)</h3>
@@ -1488,7 +1503,7 @@
                                  
                                  {activeItem.attachment && (
                                    <div 
-                                     className={`border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex items-center justify-center ${activeItem.attachmentType === 'pdf' ? 'w-full relative shadow-inner' : ''}`} 
+                                     className={`border border-slate-200 rounded-xl overflow-hidden bg-slate-50 flex items-center justify-center relative ${activeItem.attachmentType === 'pdf' ? 'w-full shadow-inner' : ''}`} 
                                      style={activeItem.attachmentType === 'pdf' ? { height: '80vh', minHeight: '500px', WebkitOverflowScrolling: 'touch' } : {}}
                                    >
                                      {activeItem.attachmentType === 'pdf' ? (() => {
@@ -1496,18 +1511,32 @@
                                          if (embedUrl.includes('drive.google.com/file/d/')) {
                                              const match = embedUrl.match(/[-\w]{25,}/);
                                              if (match) embedUrl = `https://drive.google.com/file/d/${match[0]}/preview`;
-                                         } else if (!embedUrl.includes('#toolbar=0')) {
-                                             // Sembunyikan tombol download untuk file PDF dari Cloud Storage / Server Luar
-                                             embedUrl = embedUrl + "#toolbar=0";
+                                         } else {
+                                             // HIDE TOOLBAR: Tambahkan parameter agar browser menyembunyikan tombol native download
+                                             if (embedUrl.includes('#')) {
+                                                 embedUrl = embedUrl.split('#')[0] + "#toolbar=0&navpanes=0&scrollbar=0";
+                                             } else {
+                                                 embedUrl = embedUrl + "#toolbar=0&navpanes=0&scrollbar=0";
+                                             }
                                          }
                                          
                                          return (
-                                             <iframe 
-                                                 src={embedUrl} 
-                                                 className="absolute top-0 left-0 w-full h-full border-0" 
-                                                 title="Document Viewer" 
-                                                 allowFullScreen
-                                             ></iframe>
+                                             <div className="w-full h-full relative">
+                                                 {/* ANTI-CLICK SHIELD: Perisai kaca transparan yang menutupi area atas PDF khusus untuk Siswa */}
+                                                 {viewMode === 'student' && (
+                                                     <div 
+                                                         className="absolute top-0 left-0 w-full h-14 bg-transparent z-10" 
+                                                         onContextMenu={(e) => e.preventDefault()} 
+                                                         title="Dokumen Dilindungi">
+                                                     </div>
+                                                 )}
+                                                 <iframe 
+                                                     src={embedUrl} 
+                                                     className="absolute top-0 left-0 w-full h-full border-0" 
+                                                     title="Document Viewer" 
+                                                     allowFullScreen
+                                                 ></iframe>
+                                             </div>
                                          );
                                      })() : (
                                          <div className="p-4 flex justify-center"><img src={activeItem.attachment} alt="Lampiran" className="max-w-full h-auto rounded-lg shadow-sm" /></div>
